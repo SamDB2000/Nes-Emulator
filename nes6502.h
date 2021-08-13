@@ -86,6 +86,7 @@ public:
 	// Cycles left for the duration of this instruction
 	uint8_t cycles = 0;
 
+	void complete(); // helper function
 
 
 private:
