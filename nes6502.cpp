@@ -86,7 +86,7 @@ void nes6502::reset()
 // the operation of the running program. Therefore, you wait for that operation
 // to finish (which we do by waiting unitl cycles == 0) and then the current
 // program counter is stored on the stack. Then the current status register
-// is stored on teh stack. When the routne that services the interrupt is
+// is stored on the stack. When the routine that services the interrupt is
 // done, the status register and program register can be restored using the
 // "RTI" instruction. Once the IRQ is done, a programmable address is read
 // from location 0xFFFE, which is subsequently set to the program counter.
@@ -94,13 +94,52 @@ void nes6502::irq()
 {
 	if (GetFlag(I) == 0)
 	{
-		// Push pc to stack (takes two pushes since it is a 16-bit variable)
+		// Push program counter to stack (takes two pushes since it is a 16-bit variable)
+		write(0x0100 + stkp, (pc >> 8) & 0x00FF);
+		stkp--;
+		write(0x0100 + stkp, pc & 0x00FF);
+		stkp--;
+
+		// Write the status register to the stack
+		SetFlag(B, 0);
+		SetFlag(U, 1);
+		SetFlag(I, 1);
+		write(0x0100 + stkp, status);
+		stkp--;
+
+		// Jump to a location for the program to handle an interrupt
+		addr_abs = 0xFFFE;
+		uint16_t lo = read(addr_abs + 0);
+		uint16_t hi = read(addr_abs + 1);
+		pc = (hi << 8) | lo;
+
+		cycles = 7;
 	}
 }
 
+// Non maskable interrupt:
+// The only difference between the IRQ function is that it is unignorable
+// and the address to read from afterwards has changed.
 void nes6502::nmi()
 {
+	// Push pc to stack (takes two pushes since it is a 16-bit variable)
+	write(0x0100 + stkp, (pc >> 8) & 0x00FF);
+	stkp--;
+	write(0x0100 + stkp, pc & 0x00FF);
+	stkp--;
 
+	SetFlag(B, 0);
+	SetFlag(U, 1);
+	SetFlag(I, 1);
+	write(0x0100 + stkp, status);
+	stkp--;
+
+	addr_abs = 0xFFFA;
+	uint16_t lo = read(addr_abs + 0);
+	uint16_t hi = read(addr_abs + 1);
+	pc = (hi << 8) | lo;
+
+	cycles = 8;
 }
 
 void nes6502::clock()
@@ -133,13 +172,15 @@ void nes6502::clock()
 
 uint8_t nes6502::IMP()
 {
-	fetched = a; // Set fetched variable to the contents of the accumulator
+	// Set fetched variable to the contents of the accumulator
+	fetched = a; 
 	return 0;
 }
 
 uint8_t nes6502::IMM()
 {
-	addr_abs = pc++;
+	// The data will be in the next byte of the program
+	addr_abs = pc++; 
 	return 0;
 }
 
@@ -185,6 +226,26 @@ uint8_t nes6502::ABS()
 	return 0;
 }
 
+// Sets the absolute address with X register offset
+uint8_t nes6502::ABX()
+{
+	uint16_t lo = read(pc);
+	pc++;
+	uint16_t hi = read(pc);
+	pc++;
+
+	addr_abs = (hi << 8) | lo;
+	addr_abs += x; // Adds y offset
+
+	// If the address has changed to a different page after offset
+	if ((addr_abs & 0xFF00) != (hi << 8)) {
+		return 1;
+	}
+	else {
+		return 0;
+	}
+}
+
 // Sets the absolute address with Y register offset
 uint8_t nes6502::ABY()
 {
@@ -197,10 +258,12 @@ uint8_t nes6502::ABY()
 	addr_abs += y; // Adds y offset
 
 	// If the address has changed to a different page after offset
-	if ((addr_abs & 0xFF00) != (hi << 8))
+	if ((addr_abs & 0xFF00) != (hi << 8)) {
 		return 1;
-	else
+	}
+	else {
 		return 0;
+	}
 }
 
 // Address Mode: Indirect (pointer)
@@ -209,6 +272,7 @@ uint8_t nes6502::ABY()
  This doesn't actually work on the chip, instead it wraps back around in the same
  page, yielding an invalid actual address. We have to implement this here.
  */
+// The supplied 16-bit address is read to get the actual 16-bit address
 uint8_t nes6502::IND()
 {
 	// Supplied data is a pointer
@@ -217,13 +281,14 @@ uint8_t nes6502::IND()
 	uint16_t ptr_hi = read(pc);
 	pc++;
 
+	// Assemble ptr (hi + lo)
 	uint16_t ptr = (ptr_hi << 8) | ptr_lo;
 
 	if (ptr_lo == 0x00FF) { // simulate the page boundary bug
 		addr_abs = (read(ptr & 0xFF00) << 8) | read(ptr + 0);
 	}
 	else {
-		// Set the asbolute address to the address that is the pointer
+		// Set the asbolute address to the address supplied by the ptr
 		addr_abs = (read(ptr + 1) << 8) | read(ptr + 0);
 	}
 
@@ -231,7 +296,7 @@ uint8_t nes6502::IND()
 }
 
 // Address Mode: Indirect X
-// The supplied 8-bit address is offset by X register to index
+// The supplied 8-bit address is offset by the X register to index
 // a location in page 0x00. The actual 16-bit address is read
 // from this location.
 uint8_t nes6502::IZX()
@@ -247,9 +312,9 @@ uint8_t nes6502::IZX()
 	return 0;
 }
 
-// Address Mode: Indirect Y
+// Address Mode: Indirect Zerop Page with Y-offset
 // The supplied 8-bit address indexes a location in page 0x00. 
-// The actual 16-bit address is read, and the contents of the Y register
+// The residing 16-bit address is read, and the contents of the Y register
 // is added to it. If the offset causes a change in page then an
 // clock cycle is required.
 uint8_t nes6502::IZY()
@@ -287,30 +352,25 @@ uint8_t nes6502::REL()
 
 uint8_t nes6502::fetch()
 {
+	// Don't need to fetch if in the Implied Addressing Mode
 	if (!(lookup[opcode].addrmode == &nes6502::IMP))
 		fetched = read(addr_abs);
 	return fetched;
 }
 
 // Add to the accumulator
-// function: a += m + c
+// function: a = a + m + c
 // Example of carry bit: a = 250, m = 10
-// a + m = 6, c = 1
+// a + m = 4, c = 1
 uint8_t nes6502::ADC()
 {
 	fetch();
+	// res = a + m + c
+	// This is done as a 16bit operation to make flag setting simpler
 	uint16_t result = (uint16_t)a + (uint16_t)fetched + (uint16_t)GetFlag(C);
 	SetFlag(C, result > 255);
 	SetFlag(Z, (result & 0x00FF) == 0);
 	SetFlag(N, result & 0x80);
-
-	
-	// My way of saying If the result has a different sign then both a and m
-	/*if (a & 0x80 == fetched & 0x80) {
-		if (result & 0x80 != a & 0x80) {
-			SetFlag(V, 0x01);
-		}
-	}*/
 
 	// Set the overflow bit based off of if a pos + pos = neg  or if  neg + neg = pos
 	// Logical way of saying that if the result has a different sign (first bit) then both a and m
@@ -321,43 +381,55 @@ uint8_t nes6502::ADC()
 	return 1; // might return an extra clock cycle
 }
 
-// Subtract from the accumulator: a = a - m - (1 - c)
-// Reorganized from the addition operation in order to save hardware:
-// a = a + -(m - (1-c)) ->  a = a + -m + 1 + c
-// 
-// To make a signed number positive we need to take the 2's complement (invert bits and add 1)
-// 
-// Note that the equation used (1-c), but it got converted to + 1 + c.
-// This is since we already have the +1, so all we need to do is invert the bites of the data
-// therefore we can add the exact same way we did before.
-uint8_t nes6502::SBC()
-{
-	fetch();
-
-	// Invert the bottom 8 bits with bitwise xor
-	uint16_t value = ((uint16_t)fetched) ^ 0x00FF;
-
-	// Perform the exact same addition procedure
-	uint16_t result = (uint16_t)a + (uint16_t)fetched + (uint16_t)GetFlag(C);
-	SetFlag(C, result > 255);
-	SetFlag(Z, (result & 0x00FF) == 0);
-	SetFlag(N, result & 0x80);
-	SetFlag(V, (~((uint16_t)a ^ (uint16_t)fetched) & ((uint16_t)a ^ (uint16_t)result)) & 0x0080);
-	a = result & 0x00FF; // Load the 8-bit result into the accumulator
-	return 1; // might return an extra clock cycle
-}
-
-// Bitwise logic AND
+// Bitwise logic AND between the accumulator and the fetched data
 uint8_t nes6502::AND()
 {
 	fetch();
 	a = a & fetched;
+	// Set the Zero flag if the accumulator is Zero
 	SetFlag(Z, a == 0x00);
+	// Set the negative flag if the 7th bit is 1
 	SetFlag(N, a & 0x80);
 	return 1;
 }
 
-// Branch if Carry Set
+// Shift Left One Bit (Memory or Accumulator)
+// A = C <- (A << 1) <- 0
+// Flags out: N, Z, C
+uint8_t nes6502::ASL()
+{
+	fetch();
+	// Left shift 16 bit temp variable
+	temp = (uint16_t)fetched << 1;
+	SetFlag(C, (temp & 0xFF00) > 0);
+	SetFlag(Z, (temp & 0x00FF) == 0x00);
+	SetFlag(N, temp & 0x80);
+
+	// If IMP address mode, change accumulator
+	if (lookup[opcode].addrmode == &nes6502::IMP)
+		a = temp & 0x00FF;
+	else
+		write(addr_abs, temp & 0x00FF); // Write in memory
+	return 0;
+}
+
+// Branch on Carry Clear
+// Function: if(C == 0) pc = address
+uint8_t nes6502::BCC()
+{
+	if (GetFlag(C) == 0) {
+		cycles++;
+		addr_abs = pc + addr_rel;
+
+		if ((addr_abs & 0xFF00) != (pc & 0xFF00)) // if page changes
+			cycles++;
+
+		pc = addr_abs;
+	}
+	return 0;
+}
+
+// Branch if Carry bit of the status register is set
 // Function: if(C == 1) pc = address
 uint8_t nes6502::BCS()
 {
@@ -366,7 +438,8 @@ uint8_t nes6502::BCS()
 		cycles++;
 		addr_abs = pc + addr_rel;
 
-		if ((addr_abs & 0xFF00) != (pc & 0xFF00)) // if page changes
+		// if page changes, add a cycle
+		if ((addr_abs & 0xFF00) != (pc & 0xFF00)) 
 			cycles++;
 
 		pc = addr_abs;
@@ -388,6 +461,20 @@ uint8_t nes6502::BEQ()
 
 		pc = addr_abs;
 	}
+	return 0;
+}
+
+// Test Bits in Memory with Accumulator
+// Tests if one or more bits are set in a target memory location
+// The mask pattern in a is &'ed with the value in memory to set or clear Z flag
+// Bits 7 and 6 of the value from memory are copied into the N and V flags
+uint8_t nes6502::BIT()
+{
+	fetch();
+	temp = a & fetched;
+	SetFlag(Z, temp == 0x00);
+	SetFlag(V, fetched & 0x40);
+	SetFlag(N, fetched & 0x80);
 	return 0;
 }
 
@@ -439,6 +526,33 @@ uint8_t nes6502::BPL()
 
 		pc = addr_abs;
 	}
+	return 0;
+}
+
+// Instruction: Force Break
+// Function: Forces the generation of an interrupt request.
+// The pc and statuses are pushed on the stack
+uint8_t nes6502::BRK() {
+	pc++;
+
+	SetFlag(I, 1);
+	// 0x0100 is the hardcoded location the stack starts
+	// Write the top 8 bits of the PC the stack
+	write(0x0100 + stkp, (pc >> 8) & 0x00FF);
+	stkp--;
+	// Write the bottom 8 of the pc to the stack
+	write(0x0100 + stkp, pc & 0x00FF);
+	stkp--;
+
+	// Set the break flag to 1 before writing to stack
+	SetFlag(B, 1);
+	// Write the status register to the stack
+	write(0x0100 + stkp, status);
+	stkp--;
+	SetFlag(B, 0);
+
+	// IRQ interrupt vector at 0xFFFE/F is loaded into the PC
+	pc = (uint16_t)read(0xFFFE) | ((uint16_t)read(0xFFFF) << 8);
 	return 0;
 }
 
@@ -509,19 +623,60 @@ uint8_t nes6502::PHA()
 {
 	// 0x0100 is the hardcoded stack variable
 	write(0x0100 + stkp, a);
-	stkp--;
+	stkp--; // decrease the stack pointer
 	return 0;
 }
 
 // Pop stack to accumulator
 uint8_t nes6502::PLA() {
-	stkp++;
-	a = read(0x0100 + stkp);
-	SetFlag(Z, a == 0x00);
-	SetFlag(N, a & 0x80);
+	stkp++; // incremenent stack pointer
+	a = read(0x0100 + stkp); // read from the stack on the accumulator
+	SetFlag(Z, a == 0x00);   // Set Z if zero
+	SetFlag(N, a & 0x80);    // Negative if highest bit is 1
 	return 0;
 }
 
+// A return after interrupt function. Reverts status and program counter
+// by reading off of the stack. Called after an interrupt request.
+uint8_t nes6502::RTI()
+{
+	stkp++;
+	status = read(0x0100 + stkp);
+	status &= ~B;
+	status &= ~U;
+
+	stkp++;
+	pc = (uint16_t)read(0x0100 + stkp);
+	stkp++;
+	pc |= (uint16_t)read(0x0100 + stkp);
+	return 0;
+}
+
+// Subtract from the accumulator: a = a - m - (1 - c)
+// Reorganized from the addition operation in order to save hardware:
+// a = a + -(m - (1-c)) ->  a = a + -m + 1 + c
+// 
+// To make a signed number positive we need to take the 2's complement (invert bits and add 1)
+// 
+// Note that the equation used (1-c), but it got converted to + 1 + c.
+// This is since we already have the +1, so all we need to do is invert the bites of the data
+// therefore we can add the exact same way we did before.
+uint8_t nes6502::SBC()
+{
+	fetch();
+
+	// Invert the bottom 8 bits with bitwise xor
+	uint16_t value = ((uint16_t)fetched) ^ 0x00FF;
+
+	// Perform the exact same addition procedure
+	uint16_t result = (uint16_t)a + (uint16_t)fetched + (uint16_t)GetFlag(C);
+	SetFlag(C, result > 255);
+	SetFlag(Z, (result & 0x00FF) == 0);
+	SetFlag(N, result & 0x80);
+	SetFlag(V, (~((uint16_t)a ^ (uint16_t)fetched) & ((uint16_t)a ^ (uint16_t)result)) & 0x0080);
+	a = result & 0x00FF; // Load the 8-bit result into the accumulator
+	return 1; // might return an extra clock cycle
+}
 
 // Instruction: Set Carry Flag
 // Function:    C = 1
@@ -531,7 +686,6 @@ uint8_t nes6502::SEC()
 	return 0;
 }
 
-
 // Instruction: Set Decimal Flag
 // Function:    D = 1
 uint8_t nes6502::SED()
@@ -539,7 +693,6 @@ uint8_t nes6502::SED()
 	SetFlag(D, true);
 	return 0;
 }
-
 
 // Instruction: Set Interrupt Flag / Enable Interrupts
 // Function:    I = 1

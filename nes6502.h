@@ -69,10 +69,14 @@ public:
 	void irq(); // interrupt request cycle (can be ignored)
 	void nmi(); // non-maskable interrupt request signal
 
+	// Fetch data
 	uint8_t fetch();
 
 	// Fetched data
 	uint8_t fetched = 0x00;
+
+	// Assistive temp variable
+	uint16_t temp = 0x0000;
 
 	// Absolute Address
 	uint16_t addr_abs = 0x0000;
@@ -83,10 +87,10 @@ public:
 	// Current opcode
 	uint8_t opcode = 0x00;
 
-	// Cycles left for the duration of this instruction
+	// Cycles left for the duration of the instruction
 	uint8_t cycles = 0;
 
-	void complete(); // helper function
+	bool complete(); // helper function
 
 
 private:

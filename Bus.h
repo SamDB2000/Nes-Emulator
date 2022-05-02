@@ -12,7 +12,7 @@ public:
 public: // Devices on CPU
 	nes6502 cpu; // our CPU
 
-	// Fake 64kb ram
+	// Fake 64kb RAM
 	std::array<uint8_t, 64 * 1024> ram;
 
 public: // Bus Read and Write
