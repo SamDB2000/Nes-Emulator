@@ -421,7 +421,8 @@ uint8_t nes6502::BCC()
 		cycles++;
 		addr_abs = pc + addr_rel;
 
-		if ((addr_abs & 0xFF00) != (pc & 0xFF00)) // if page changes
+		// if page changes
+		if ((addr_abs & 0xFF00) != (pc & 0xFF00)) 
 			cycles++;
 
 		pc = addr_abs;
@@ -605,7 +606,7 @@ uint8_t nes6502::CLD()
 }
 
 // Clear Interrupt flag
-uint8_t nes6502::CLC()
+uint8_t nes6502::CLI()
 {
 	SetFlag(I, false);
 	return 0;
@@ -615,6 +616,95 @@ uint8_t nes6502::CLC()
 uint8_t nes6502::CLV()
 {
 	SetFlag(V, false);
+	return 0;
+}
+
+// Instruction: CMP - Compare Memory and Accumulator
+// Function: Change flags based on fetched data and accumulator
+// NOTE: This may need to be casted to uint16_t
+uint8_t nes6502::CMP() {
+	fetch();
+	temp = a - fetched;
+	SetFlag(C, temp >= 0x00);
+	SetFlag(Z, temp == 0x00);
+	SetFlag(N, temp & 0x80);
+	return 1;
+}
+
+// Instruction: CPX - Compare Memory and X Register
+// Function: Change C, Z, N, flags based on fetched data and X Register
+// NOTE: This may need to be casted to uint16_t
+uint8_t nes6502::CPX() {
+	fetch();
+	temp = x - fetched;
+	SetFlag(C, temp >= 0x00);
+	SetFlag(Z, temp == 0x00);
+	SetFlag(N, temp & 0x80);
+	return 0;
+}
+
+// Instruction: CPX - Compare Memory and Y Register
+// Function: Change C, Z, N, flags based on fetched data and Y Register
+// NOTE: This may need to be casted to uint16_t
+uint8_t nes6502::CPY() {
+	fetch();
+	temp = y - fetched;
+	SetFlag(C, temp >= 0x00);
+	SetFlag(Z, temp == 0x00);
+	SetFlag(N, temp & 0x80);
+	return 0;
+}
+
+// Instruction: DEC - Decrement Memory
+// Function: M, Z, N = M - 1
+// Sets Z and N flags appropriately
+uint8_t nes6502::DEC() {
+	fetch();
+	fetched = fetched - 0x01;
+	// Make sure to overwrite the data in memory
+	write(addr_abs, fetched);
+	SetFlag(Z, temp == 0x00);
+	SetFlag(N, temp & 0x80);
+	return 0;
+}
+
+// Instruction: DEC - Decrement X Register
+// Function: X, Z, N = X - 1
+// Sets Z and N flags appropriately
+uint8_t nes6502::DEX() {
+	x--;
+	SetFlag(Z, x == 0x00);
+	SetFlag(N, x & 0x80);
+	return 0;
+}
+
+// Instruction: DEY - Decrement Y Register
+// Function: Y, Z, N = Y - 1
+// Sets Z and N flags appropriately
+uint8_t nes6502::DEY() {
+	y--;
+	SetFlag(Z, y == 0x00);
+	SetFlag(N, y & 0x80);
+	return 0;
+}
+
+// Instruction: EOR - "Exclusive-OR" Memory with Accumulator
+// Function: A ^ M -> A
+// Add a cycle if a page boundary is crossed
+uint8_t nes6502::EOR() {
+	fetch();
+	a = a ^ fetched;
+	SetFlag(Z, a == 0x00);
+	SetFlag(N, a & 0x80);
+	return 1;
+}
+
+uint8_t nes6502::INC() {
+	fetch();
+	fetched = fetched + 0x01;
+	write(addr_abs, fetched);
+	SetFlag(Z, fetched == 0x00);
+	SetFlag(N, fetched & 0x80);
 	return 0;
 }
 
