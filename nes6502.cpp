@@ -699,6 +699,7 @@ uint8_t nes6502::EOR() {
 	return 1;
 }
 
+// Instruction: Incrememnt Memory
 uint8_t nes6502::INC() {
 	fetch();
 	fetched = fetched + 0x01;
@@ -706,6 +707,138 @@ uint8_t nes6502::INC() {
 	SetFlag(Z, fetched == 0x00);
 	SetFlag(N, fetched & 0x80);
 	return 0;
+}
+
+// Instruction: Increment X Register
+uint8_t nes6502::INX() {
+	x = x + 0x01;
+	SetFlag(Z, x == 0x00);
+	SetFlag(N, x & 0x80);
+	return 0;
+}
+
+// Instruction: Increment Y Register
+uint8_t nes6502::INY() {
+	y = y + 0x01;
+	SetFlag(Z, x == 0x00);
+	SetFlag(N, x & 0x80);
+	return 0;
+}
+
+// Instruction: JMP - Jump
+// Function: Jump to New Location. Sets the program counter to the
+// address specified by the operand. (No flag changes)
+// JMP is an Absolute Indirect Addressing Mode (ABS)
+uint8_t nes6502::JMP() {
+	pc = addr_abs;
+	return 0;
+}
+
+//TODO: COUNT ALL THE ONES UNDER THIS AS DONE TODAY!
+
+
+// Instruction: JSR - Jump to Subroutine
+// Function: Pushes the current program counter (minus one) on to
+// the stack and then sets the program counter to the target memory address.
+// (No flag changes)
+uint8_t nes6502::JSR() {
+	pc--;
+	write(0x0100 + stkp, (pc >> 8) & 0x00FF);
+	stkp--;
+	write(0x0100 + stkp, pc & 0x00FF);
+	stkp--;
+
+	pc = addr_abs;
+	return 0;
+}
+
+// Instruction: LDA - Load Accumulator
+// Function: Loads a byte of memory into the accumulator
+// A, Z, N = M
+uint8_t nes6502::LDA() {
+	fetch();
+	a = fetched;
+	SetFlag(Z, a == 0x00);
+	SetFlag(N, a & 0x80);
+	return 1;
+}
+
+// Instruction: LDX - Load X Register
+// Function: Loads a byte of memory into the X Register
+// X, Z, N = M
+uint8_t nes6502::LDX() {
+	fetch();
+	x = fetched;
+	SetFlag(Z, x == 0x00);
+	SetFlag(N, x & 0x80);
+	return 1;
+}
+
+// Instruction: LDY - Load Y Register
+// Function: Loads a byte of memory into the Y Register
+// Y, Z, N = M
+uint8_t nes6502::LDY() {
+	fetch();
+	y = fetched;
+	SetFlag(Z, y == 0x00);
+	SetFlag(N, y & 0x80);
+	return 1;
+}
+
+// Instruction: LSR - Logical Shift Right
+// Function: A,C,Z,N = A/2 or M,C,Z,N = M/2
+// Each of the bits in A or M is shifted one place to the right.
+// The bit that was in the bit 0 is shifted onto the carry flag.
+uint8_t nes6502::LSR() {
+	fetch();
+	SetFlag(C, fetched & 0x0001);
+	// Right shift 8 bit temp variable
+	temp = fetched >> 1;
+	SetFlag(Z, (temp & 0x00FF) == 0x0000);
+	SetFlag(N, temp & 0x0080);
+
+	// If IMP address mode, change accumulator
+	if (lookup[opcode].addrmode == &nes6502::IMP) {
+		a = temp & 0x00FF;
+	}
+	else {
+		write(addr_abs, temp & 0x00FF); // Write in memory
+	}
+
+	return 0;
+
+}
+
+uint8_t nes6502::NOP()
+{
+	// Sadly not all NOPs are equal, Ive added a few here
+	// based on https://wiki.nesdev.com/w/index.php/CPU_unofficial_opcodes
+	// and will add more based on game compatibility, and ultimately
+	// I'd like to cover all illegal opcodes too
+	switch (opcode) {
+	case 0x1C:
+	case 0x3C:
+	case 0x5C:
+	case 0x7C:
+	case 0xDC:
+	case 0xFC:
+		return 1;
+		break;
+	}
+	return 0;
+}
+
+
+// Bitwise logic incluse OR between the accumulator and the fetched data
+uint8_t nes6502::ORA()
+{
+	fetch();
+	a = a | fetched;
+	// Set the Zero flag if the accumulator is Zero
+	SetFlag(Z, a == 0x00);
+	// Set the negative flag if the 7th bit is 1
+	SetFlag(N, a & 0x80);
+	return 1;
 }
 
 // Push accumulator to stack
@@ -717,12 +850,80 @@ uint8_t nes6502::PHA()
 	return 0;
 }
 
+// Instruction: Push Processor Status
+// Pushes a copy of status flags onto the stack
+uint8_t nes6502::PHP() {
+	// TODO: This one looks correct based off the guide
+	// but source code is different, check olcNES if not working
+	write(0x0100 + stkp, status);
+	stkp--;
+	return 0;
+}
+
 // Pop stack to accumulator
 uint8_t nes6502::PLA() {
 	stkp++; // incremenent stack pointer
 	a = read(0x0100 + stkp); // read from the stack on the accumulator
 	SetFlag(Z, a == 0x00);   // Set Z if zero
 	SetFlag(N, a & 0x80);    // Negative if highest bit is 1
+	return 0;
+}
+
+// Instruction: PLP - Pull Processor Status
+// Function: Pulls an 8 bit value from the stack and into the processor flags.
+// The flags will take on new states as determined by the value pulled.
+uint8_t nes6502::PLP() {
+	stkp++;
+	status = read(0x0100 + stkp);
+	SetFlag(U, 1);
+	return 0;
+}
+
+// Instruction: ROL - Rotate Left
+// Move each of the bits in either A or M one place to the left.
+// Bit 0 is filled with the carry flag while the old bit 7 replaces carry flag.
+uint8_t nes6502::ROL() {
+	fetch();
+	// Left shift by 1
+	temp = fetched << 1;
+	// Add the carry flag to the end
+	// This assumes the 0 bit's value is 0 after a left shift
+	temp += GetFlag(C);
+	SetFlag(C, fetched & 0x80);
+	SetFlag(Z, (temp & 0x00FF) == 0x0000);
+	SetFlag(N, temp & 0x0080);
+
+	// If IMP address mode, change to accumulator
+	if (lookup[opcode].addrmode == &nes6502::IMP) {
+		a = temp & 0x00FF;
+	}
+	else {
+		write(addr_abs, temp & 0x00FF); // Write in memory
+	}
+
+	return 0;
+}
+
+// ROR - Rotate Right
+// Move each of the bits in either A or M one place to the right.
+// Bit 7 is filled with the current value of the carry flag 
+// while the old bit 0 becomes the new carry flag value.
+uint8_t nes6502::ROR() {
+	fetch();
+	temp = fetched >> 1;
+	temp |= GetFlag(C) << 7;
+	SetFlag(C, fetched & 0x01);
+	SetFlag(Z, (temp & 0x00FF) == 0x0000);
+	SetFlag(N, temp & 0x0080);
+
+	// If IMP address mode, change to accumulator
+	if (lookup[opcode].addrmode == &nes6502::IMP) {
+		a = temp & 0x00FF;
+	}
+	else {
+		write(addr_abs, temp & 0x00FF); // Write in memory
+	}
+
 	return 0;
 }
 
@@ -739,6 +940,19 @@ uint8_t nes6502::RTI()
 	pc = (uint16_t)read(0x0100 + stkp);
 	stkp++;
 	pc |= (uint16_t)read(0x0100 + stkp);
+	return 0;
+}
+
+// RTS - Return from Subroutine
+// The RTS instruction is used at the end of a subroutine to return to the calling routine.
+// It pulls the program counter (minus one) from the stack.
+uint8_t nes6502::RTS() {
+	stkp++;
+	pc = (uint16_t)read(0x0100 + stkp);
+	stkp++;
+	pc |= (uint16_t)read(0x0100 + stkp) << 8;
+
+	pc++;
 	return 0;
 }
 
@@ -791,6 +1005,86 @@ uint8_t nes6502::SEI()
 	SetFlag(I, true);
 	return 0;
 }
+
+// STA - Store Accumulator
+// Stores the contents of the accumulator into memory
+uint8_t nes6502::STA() {
+	write(addr_abs, a);
+	return 0;
+}
+
+// STX - Store X Register
+// Stores the contents of the X Register into memory
+uint8_t nes6502::STX() {
+	write(addr_abs, x);
+	return 0;
+}
+
+// STY - Store Y Register
+// Stores the contents of the Y Register into memory
+uint8_t nes6502::STY() {
+	write(addr_abs, y);
+	return 0;
+}
+
+// TAX - Transfer Accumulator to X
+// Copies the contents of the accumulator into the X register
+// Sets zero and negative flags
+uint8_t nes6502::TAX() {
+	x = a;
+	SetFlag(Z, x == 0x00);
+	SetFlag(N, x & 0x80);
+	return 0;
+}
+
+// TAY - Transfer Accumulator to Y
+// Copies the contents of the accumulator into the Y register
+// Sets zero and negative flags
+uint8_t nes6502::TAY() {
+	y = a;
+	SetFlag(Z, y == 0x00);
+	SetFlag(N, y & 0x80);
+	return 0;
+}
+
+// TSX - Transfer Stack Pointer to X
+// Copies the current contents of the stack register into the X register
+// Sets zero and negative flags accordingly
+uint8_t nes6502::TSX() {
+	x = stkp;
+	SetFlag(Z, x == 0x00);
+	SetFlag(N, x & 0x80);
+	return 0;
+}
+
+// TXA - Transfer X to Accumulator
+// Copies the current contents of the X register into the accumulator
+// Sets zero and negative flags accordingly
+uint8_t nes6502::TXA() {
+	a = x;
+	SetFlag(Z, a == 0x00);
+	SetFlag(N, a & 0x80);
+	return 0;
+}
+
+// TXS - Transfer X to Stack Pointer
+// Copies the current contents of the X register into the stack pointer
+// Sets zero and negative flags accordingly
+uint8_t nes6502::TXA() {
+	stkp = x;
+	return 0;
+}
+
+// TYA - Transfer Y Register to Accumulator
+// Copies the current contents of the Y register into the accumulator
+// Sets zero and negative flags accordingly
+uint8_t nes6502::TXA() {
+	a = y;
+	SetFlag(Z, a == 0x00);
+	SetFlag(N, a & 0x80);
+	return 0;
+}
+
 
 uint8_t nes6502::XXX() {
 	return 0;
