@@ -1,6 +1,10 @@
 /*** This is the PPU or Picture Processing Unit */
 #include "nes2C02.h"
 
+nes2C02::nes2C02() {}
+
+nes2C02::~nes2C02() {}
+
 uint8_t nes2C02::cpuRead(uint16_t addr, bool rdonly)
 {
     uint8_t data = 0x00;
@@ -76,4 +80,8 @@ void nes2C02::ppuWrite(uint16_t addr, uint8_t data)
 
 void nes2C02::ConnectCartridge(const std::shared_ptr<Cartridge>& cartridge) {
     this->cart = cartridge;
+}
+
+void nes2C02::clock() {
+    //cycle++;
 }

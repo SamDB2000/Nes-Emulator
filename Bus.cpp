@@ -3,7 +3,7 @@
 Bus::Bus()
 {
 	// Clear RAM contents upon construction, just in case
-	for (auto& i : cpuRam) i = 0x0;
+	// for (auto& i : cpuRam) i = 0x0;
 
 	// Connect CPU to communication bus
 	cpu.ConnectBus(this);
@@ -33,7 +33,7 @@ void Bus::cpuWrite(uint16_t addr, uint8_t data)
 }
 
 
-uint8_t Bus::cpuRead(uint16_t addr, bool bReadOnly = false) 
+uint8_t Bus::cpuRead(uint16_t addr, bool bReadOnly) 
 {
 	uint8_t data = 0x00;
 

@@ -1,7 +1,7 @@
 #include "nes6502.h"
+#include "Bus.h"
 
-nes6502::nes6502()
-{
+nes6502::nes6502() {
 	// There is a 16x16 table for instructions. It's arranged so that the bottom
 	// 4 bits of the instruction choose the column, and the top 4 bits choose the row.
 	
@@ -30,7 +30,7 @@ nes6502::nes6502()
 		{ "CPX", &a::CPX, &a::IMM, 2 },{ "SBC", &a::SBC, &a::IZX, 6 },{ "???", &a::NOP, &a::IMP, 2 },{ "???", &a::XXX, &a::IMP, 8 },{ "CPX", &a::CPX, &a::ZP0, 3 },{ "SBC", &a::SBC, &a::ZP0, 3 },{ "INC", &a::INC, &a::ZP0, 5 },{ "???", &a::XXX, &a::IMP, 5 },{ "INX", &a::INX, &a::IMP, 2 },{ "SBC", &a::SBC, &a::IMM, 2 },{ "NOP", &a::NOP, &a::IMP, 2 },{ "???", &a::SBC, &a::IMP, 2 },{ "CPX", &a::CPX, &a::ABS, 4 },{ "SBC", &a::SBC, &a::ABS, 4 },{ "INC", &a::INC, &a::ABS, 6 },{ "???", &a::XXX, &a::IMP, 6 },
 		{ "BEQ", &a::BEQ, &a::REL, 2 },{ "SBC", &a::SBC, &a::IZY, 5 },{ "???", &a::XXX, &a::IMP, 2 },{ "???", &a::XXX, &a::IMP, 8 },{ "???", &a::NOP, &a::IMP, 4 },{ "SBC", &a::SBC, &a::ZPX, 4 },{ "INC", &a::INC, &a::ZPX, 6 },{ "???", &a::XXX, &a::IMP, 6 },{ "SED", &a::SED, &a::IMP, 2 },{ "SBC", &a::SBC, &a::ABY, 4 },{ "NOP", &a::NOP, &a::IMP, 2 },{ "???", &a::XXX, &a::IMP, 7 },{ "???", &a::NOP, &a::IMP, 4 },{ "SBC", &a::SBC, &a::ABX, 4 },{ "INC", &a::INC, &a::ABX, 7 },{ "???", &a::XXX, &a::IMP, 7 },
 	};
-	// Fun!
+	// Gross blehhhh, I just copy pasted this without regrets
 }
 
 nes6502::~nes6502() {
@@ -40,13 +40,13 @@ nes6502::~nes6502() {
 // Reads a single byte from the bus, located at the specified 16-bit address
 uint8_t nes6502::read(uint16_t a)
 {
-	return bus->read(a, false);
+	return bus->cpuRead(a, false);
 }
 
 // Writes a byte to the bus at the specified address
 void nes6502::write(uint16_t a, uint8_t d)
 {
-	return bus->write(a, d);
+	return bus->cpuWrite(a, d);
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -166,6 +166,21 @@ void nes6502::clock()
 
 //////////////////////////////////////////////////////////////////////////////
 // Flag Functions
+
+// Returns the value of a specific bit of the status register
+uint8_t nes6502::GetFlag(FLAGS6502 f) {
+	return ((status & f) > 0 ? 1 : 0);
+}
+
+// Sets or clears a specific bit of the status register
+void nes6502::SetFlag(FLAGS6502 f, bool v) {
+	if (v) {
+		status |= f;
+	}
+	else {
+		status &= ~f;
+	}
+}
 
 //////////////////////////////////////////////////////////////////////////////
 // Addressing Modes
@@ -1070,7 +1085,7 @@ uint8_t nes6502::TXA() {
 // TXS - Transfer X to Stack Pointer
 // Copies the current contents of the X register into the stack pointer
 // Sets zero and negative flags accordingly
-uint8_t nes6502::TXA() {
+uint8_t nes6502::TXS() {
 	stkp = x;
 	return 0;
 }
@@ -1078,7 +1093,7 @@ uint8_t nes6502::TXA() {
 // TYA - Transfer Y Register to Accumulator
 // Copies the current contents of the Y register into the accumulator
 // Sets zero and negative flags accordingly
-uint8_t nes6502::TXA() {
+uint8_t nes6502::TYA() {
 	a = y;
 	SetFlag(Z, a == 0x00);
 	SetFlag(N, a & 0x80);

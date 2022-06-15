@@ -62,6 +62,14 @@ Cartridge::Cartridge(const std::string& sFileName) {
 
 		}
 
+		// Load appropriate mapper
+		switch (nMapperID) {
+		case 0:
+			// Uses polymorphism to have any mapper type fit the pMapper variable
+			pMapper = std::make_shared<Mapper_000>(nPRGBanks, nCHRBanks);
+			break;
+		}
+
 		ifs.close();
 	}
 }
@@ -70,20 +78,50 @@ Cartridge::~Cartridge() {}
 
 bool Cartridge::cpuRead(uint16_t addr, uint8_t& data)
 {
-	return false;
+	// Temp variable for transformed address
+	uint32_t mapped_addr = 0;
+	
+	// Only change the mapped address if the specific 
+	// mapper determines it must come from the cartridge
+	if (pMapper->cpuMapRead(addr, mapped_addr)) {
+		// Set data to the memory from the PRG vector at the given mapped offset
+		// Remember that vPRGMemory is read directly from the ROM file
+		data = vPRGMemory[mapped_addr];
+		return true;
+	} // If the cartridge isn't read from, don't need to do anything
+	else
+		return false;
 }
 
 bool Cartridge::cpuWrite(uint16_t addr, uint8_t data)
 {
-	return false;
+	uint32_t mapped_addr = 0;
+	if (pMapper->cpuMapWrite(addr, mapped_addr)) {
+		vPRGMemory[mapped_addr] = data;
+		return true;
+	}
+	else
+		return false;
 }
 
 bool Cartridge::ppuRead(uint16_t addr, uint8_t& data)
 {
-	return false;
+	uint32_t mapped_addr = 0;
+	if (pMapper->ppuMapRead(addr, mapped_addr)) {
+		vCHRMemory[mapped_addr] = data;
+		return true;
+	}
+	else
+		return false;
 }
 
 bool Cartridge::ppuWrite(uint16_t addr, uint8_t data)
 {
-	return false;
+	uint32_t mapped_addr = 0;
+	if (pMapper->ppuMapWrite(addr, mapped_addr)) {
+		vCHRMemory[mapped_addr] = data;
+		return true;
+	}
+	else
+		return false;
 }

@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
-#include "Bus.h"
+
+#include "Cartridge.h"
 
 class nes2C02
 {

@@ -22,12 +22,16 @@
     <ClCompile Include="Bus.cpp" />
     <ClCompile Include="Cartridge.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="Mapper.cpp" />
+    <ClCompile Include="Mapper_000.cpp" />
     <ClCompile Include="nes2C02.cpp" />
     <ClCompile Include="nes6502.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Bus.h" />
     <ClInclude Include="Cartridge.h" />
+    <ClInclude Include="Mapper.h" />
+    <ClInclude Include="Mapper_000.h" />
     <ClInclude Include="nes2C02.h" />
     <ClInclude Include="nes6502.h" />
   </ItemGroup>

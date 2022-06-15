@@ -1,9 +1,12 @@
 #pragma once
-#include "Bus.h"
 #include <cstdint>
-#include <string>
 #include <vector>
+#include <string>
+#include <map>
 
+// #include "Bus.h"
+
+// Declaration of bus class
 class Bus;
 
 class nes6502
@@ -11,10 +14,6 @@ class nes6502
 public:
 	nes6502();
 	~nes6502();
-
-	void ConnectBus(Bus *n) {
-		bus = n;
-	}
 
 public:
 	enum FLAGS6502
@@ -91,6 +90,10 @@ public:
 	uint8_t cycles = 0;
 
 	bool complete(); // helper function
+
+	void ConnectBus(Bus* n) {
+		bus = n;
+	}
 
 
 private:

@@ -3,7 +3,9 @@
 #include <string>
 #include <fstream>
 #include <vector>
-#include "Bus.h"
+
+// #include "Bus.h"
+#include "Mapper_000.h"
 
 class Cartridge
 {
@@ -19,6 +21,8 @@ private:
 	uint8_t nMapperID = 0;
 	uint8_t nPRGBanks = 0;
 	uint8_t nCHRBanks = 0;
+
+	std::shared_ptr<Mapper> pMapper;
 
 public:
 	// These return a boolean in order to tell the calling system 
