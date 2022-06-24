@@ -95,6 +95,9 @@ public:
 		bus = n;
 	}
 
+	// Produces a map of strings, with keys equivalent to instruction start
+	// locations in memory, for the specified address range
+	std::map<uint16_t, std::string> disassemble(uint16_t nStart, uint16_t nStop);
 
 private:
 	Bus* bus = nullptr;
@@ -105,9 +108,13 @@ private:
 	uint8_t GetFlag(FLAGS6502 f);
 	void SetFlag(FLAGS6502 f, bool v);
 
+	// This structure and the following vector are used to compile and store
+	// the opcode translation table. The 6502 can effectively have 256 different
+	// instructions. Each of these are stored in a table in numerical order 
+	// so they can be looked up easily, with no decoding required.
 	struct INSTRUCTION
 	{
-		std::string name; // for dis-assembling purposes
+		std::string name; // a pneumonic for dis-assembling purposes
 		uint8_t(nes6502::*operate)(void) = nullptr; // function pointer to the opcode
 		uint8_t(nes6502::*addrmode)(void) = nullptr; // function pointer to the address mode
 		uint8_t cycles = 0; // number of clock cycles for an instruction

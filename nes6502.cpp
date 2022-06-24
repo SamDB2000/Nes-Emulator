@@ -30,7 +30,7 @@ nes6502::nes6502() {
 		{ "CPX", &a::CPX, &a::IMM, 2 },{ "SBC", &a::SBC, &a::IZX, 6 },{ "???", &a::NOP, &a::IMP, 2 },{ "???", &a::XXX, &a::IMP, 8 },{ "CPX", &a::CPX, &a::ZP0, 3 },{ "SBC", &a::SBC, &a::ZP0, 3 },{ "INC", &a::INC, &a::ZP0, 5 },{ "???", &a::XXX, &a::IMP, 5 },{ "INX", &a::INX, &a::IMP, 2 },{ "SBC", &a::SBC, &a::IMM, 2 },{ "NOP", &a::NOP, &a::IMP, 2 },{ "???", &a::SBC, &a::IMP, 2 },{ "CPX", &a::CPX, &a::ABS, 4 },{ "SBC", &a::SBC, &a::ABS, 4 },{ "INC", &a::INC, &a::ABS, 6 },{ "???", &a::XXX, &a::IMP, 6 },
 		{ "BEQ", &a::BEQ, &a::REL, 2 },{ "SBC", &a::SBC, &a::IZY, 5 },{ "???", &a::XXX, &a::IMP, 2 },{ "???", &a::XXX, &a::IMP, 8 },{ "???", &a::NOP, &a::IMP, 4 },{ "SBC", &a::SBC, &a::ZPX, 4 },{ "INC", &a::INC, &a::ZPX, 6 },{ "???", &a::XXX, &a::IMP, 6 },{ "SED", &a::SED, &a::IMP, 2 },{ "SBC", &a::SBC, &a::ABY, 4 },{ "NOP", &a::NOP, &a::IMP, 2 },{ "???", &a::XXX, &a::IMP, 7 },{ "???", &a::NOP, &a::IMP, 4 },{ "SBC", &a::SBC, &a::ABX, 4 },{ "INC", &a::INC, &a::ABX, 7 },{ "???", &a::XXX, &a::IMP, 7 },
 	};
-	// Gross blehhhh, I just copy pasted this without regrets
+	// Gross blehhhh, I just copy pasted this
 }
 
 nes6502::~nes6502() {
@@ -204,7 +204,8 @@ uint8_t nes6502::ZP0()
 {
 	addr_abs = read(pc);
 	pc++;
-	addr_abs &= 0x00FF; // Sets the page (the first byte of the memory address) to 0
+	// Sets the page (the first byte of the memory address) to 0
+	addr_abs &= 0x00FF;
 	return 0;
 }
 
@@ -282,10 +283,11 @@ uint8_t nes6502::ABY()
 }
 
 // Address Mode: Indirect (pointer)
-/* The original hardware actually includes a bug. If the low byte of the supplied address is 0xFF,
- then to read the high byte of the actual address we need to cross a page boundary.
- This doesn't actually work on the chip, instead it wraps back around in the same
- page, yielding an invalid actual address. We have to implement this here.
+/* The original hardware actually includes a bug. If the low byte of the 
+ supplied address is 0xFF, then to read the high byte of the actual address
+ we need to cross a page boundary.
+ This doesn't actually work on the chip, instead it wraps back around in the 
+ same page, yielding an invalid address. We have to implement this here.
  */
 // The supplied 16-bit address is read to get the actual 16-bit address
 uint8_t nes6502::IND()
@@ -327,7 +329,7 @@ uint8_t nes6502::IZX()
 	return 0;
 }
 
-// Address Mode: Indirect Zerop Page with Y-offset
+// Address Mode: Indirect Zero Page with Y-offset
 // The supplied 8-bit address indexes a location in page 0x00. 
 // The residing 16-bit address is read, and the contents of the Y register
 // is added to it. If the offset causes a change in page then an
@@ -1112,4 +1114,144 @@ uint8_t nes6502::XXX() {
 bool nes6502::complete()
 {
 	return cycles == 0;
+}
+
+// Disassembly function.
+// This turs the binary instruction code into something humanly readable for a certain address range
+// This is mainly going to be used for debugging
+std::map<uint16_t, std::string> nes6502::disassemble(uint16_t nStart, uint16_t nStop) {
+	uint32_t addr = nStart;
+	uint8_t value = 0x00, lo = 0x00, hi = 0x00;
+	// Need a comment for this, but will read on to see how it's used
+	std::map<uint16_t, std::string> mapLines;
+	uint16_t line_addr = 0;
+
+	// A convinient utility to convert variables into hex strings
+	auto hex = [](uint32_t n, uint8_t d) {
+		std::string s(d, '0');
+		// n >>= 4 means n = right shift 4 (n = n >> 4)
+		for (int i = d - 1; i >= 0; i--, n >>= 4) {
+			s[i] = "0123456789ABCDEF"[n & 0xF]; // n & 0xF is equivalent to n % 16
+			return s;
+		}
+	};
+
+	// Starting at the specified address we read an instruction
+	// byte, which in turn yields information from the lookup table
+	// as to how many additional bytes we need to read and what the 
+	// addressing mode is. This info is used to assemble human readable
+	// syntax, which is different depending on the mode.
+
+	// As the instruction is decoded, a std::string is assembled
+	// with the readable output
+	while (addr <= (uint32_t)nStop) {
+		line_addr = addr;
+
+		// Prefix line with instruction address
+		std::string s_inst = "$" + hex(addr, 4) + ": ";
+
+		// Read instruction, and get its readable name
+		uint8_t opcode = bus->cpuRead(addr, true);
+		addr++;
+		s_inst += lookup[opcode].name + " ";
+
+		// Get operands from desired locations, and form the 
+		// instruction based on its addressing mode. These
+		// routines mimmick the actual fetch routine of the
+		// 6502 in order to get accurate data as part of the instruction.
+		if (lookup[opcode].addrmode == &nes6502::IMP) {
+			s_inst += " {IMP}";
+		}
+		else if (lookup[opcode].addrmode == &nes6502::IMM) {
+			// The data will be in the next byte of the program
+			value = bus->cpuRead(addr, true);
+			addr++;
+			// Including the next byte of the program
+			s_inst += "$" + hex(value, 2) + " {IMM}";
+		}
+		else if (lookup[opcode].addrmode == &nes6502::ZP0) {
+			// Zero page addressing sets the page (first byte of memory addr) to 0
+			lo = bus->cpuRead(addr, true);
+			addr++;
+			hi = 0x00;
+			value = (hi << 8) | lo;
+			s_inst += "$" + hex(value, 2) + " {ZP0}";
+			// I'm doing this differently than OLC
+		}
+		else if (lookup[opcode].addrmode == &nes6502::ZPX) {
+			// Zero page addressing with x reg offset
+			lo = bus->cpuRead(addr, true);
+			addr++;
+			hi = 0x00;
+			s_inst += "$" + hex(lo, 2) + ", X {ZPX}";
+		}
+		else if (lookup[opcode].addrmode == &nes6502::ZPY) {
+			// Zero page addressing with y reg offset
+			lo = bus->cpuRead(addr, true);
+			addr++;
+			hi = 0x00;
+			s_inst += "$" + hex(lo, 2) + ", Y {ZPY}";
+		}
+		else if (lookup[opcode].addrmode == &nes6502::ABS) {
+			lo = bus->cpuRead(addr, true);
+			addr++;
+			hi = bus->cpuRead(addr, true);
+			addr++;
+			s_inst += "$" + hex((uint16_t)(hi << 8) | lo, 4) + " {ABS}";
+		}
+		else if (lookup[opcode].addrmode == &nes6502::ABX) {
+			lo = bus->cpuRead(addr, true);
+			addr++;
+			hi = bus->cpuRead(addr, true);
+			addr++;
+			s_inst += "$" + hex((uint16_t)(hi << 8) | lo, 4) + ", X {ABX}";
+		}
+		else if (lookup[opcode].addrmode == &nes6502::ABY) {
+			lo = bus->cpuRead(addr, true);
+			addr++;
+			hi = bus->cpuRead(addr, true);
+			addr++;
+			s_inst += "$" + hex((uint16_t)(hi << 8) | lo, 4) + ", Y {ABY}";
+		}
+		else if (lookup[opcode].addrmode == &nes6502::IND) {
+			// The supplied 16-bit addr is read to get the actual 16-bit addr
+			lo = bus->cpuRead(addr, true);
+			addr++;
+			hi = bus->cpuRead(addr, true);
+			addr++;
+			// the () mean a pointer
+			s_inst += "($" + hex((uint16_t)(hi << 8) | lo, 4) + ") {IND}";
+		}
+		else if (lookup[opcode].addrmode == &nes6502::IZX) {
+			//Supplied 8-bit address is offset by the X register
+			// to a location in page 0x00
+			lo = bus->cpuRead(addr, true);
+			addr++;
+			hi = 0x00;
+			s_inst += "$" + hex(lo, 2) + ", X {IZX}";
+		}
+		else if (lookup[opcode].addrmode == &nes6502::IZY) {
+			//Supplied 8-bit address is offset by the Y register
+			// to a location in page 0x00
+			lo = bus->cpuRead(addr, true);
+			addr++;
+			hi = 0x00;
+			s_inst += "$" + hex(lo, 2) + ", Y {IZY}";
+		}
+		else if (lookup[opcode].addrmode == &nes6502::REL) {
+			value = bus->cpuRead(addr, true);
+			s_inst += "$[REL: " + hex(value, 2) + "], " + hex(value + addr, 4) + " {REL}";
+		}
+
+		// Add the formed string to an std::map, using the instruction's
+		// address as the key. This makes it convenient to look for later
+		// as the instructions are variable in length, so a simple
+		// incremental index is not sufficient.
+		mapLines[line_addr] = s_inst;
+
+		
+	}
+
+	return mapLines;
+
 }

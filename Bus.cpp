@@ -49,6 +49,9 @@ uint8_t Bus::cpuRead(uint16_t addr, bool bReadOnly)
 		ppu.cpuRead(addr & 0x0007, bReadOnly);
 	}
 
+	// ERASE WHEN DONE TESTING CPU
+	// data = cpuRam[addr];
+
 	return data;
 }
 
