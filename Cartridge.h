@@ -15,6 +15,8 @@ public:
 	~Cartridge();
 
 private:
+	// Memory for the ROM Files
+	// They are vectors since we don't know how much memory will be used
 	std::vector<uint8_t> vPRGMemory;
 	std::vector<uint8_t> vCHRMemory;
 

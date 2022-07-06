@@ -41,7 +41,7 @@ Cartridge::Cartridge(const std::string& sFileName) {
 		}
 
 		if (fileType == 1) {
-			// Find the size of program memory
+			// Find the size of program memory (# of PRGbanks)
 			nPRGBanks = header.prg_rom_chunks;
 			// Resive vRAM based on # of banks (16kb per bank of prg memory)
 			vPRGMemory.resize(nPRGBanks * 16384);

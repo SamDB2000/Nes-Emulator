@@ -42,15 +42,15 @@ uint8_t Bus::cpuRead(uint16_t addr, bool bReadOnly)
 
 	}
 	// Check for correct address locations (8kb range for RAM)
-	else if (addr >= 0x0000 && addr <= 0x1FFF) {
-		data = cpuRam[addr & 0x07FF];
+	else if (addr >= 0x0000 && addr <= 0x1fff) {
+		data = cpuRam[addr & 0x07ff];
 	}
-	else if (addr >= 2000 && addr <= 0x3FFF) {
+	else if (addr >= 2000 && addr <= 0x3fff) {
 		ppu.cpuRead(addr & 0x0007, bReadOnly);
 	}
 
 	// ERASE WHEN DONE TESTING CPU
-	// data = cpuRam[addr];
+	//data = cpuRam[addr];
 
 	return data;
 }
@@ -66,5 +66,10 @@ void Bus::reset() {
 }
 
 void Bus::clock() {
-
+	ppu.clock();
+	//the cpu clock runs 3x slower than the ppu clock
+	if (nSystemClockCounter % 3 == 0) {
+		cpu.clock();
+	}
+	nSystemClockCounter++;
 }

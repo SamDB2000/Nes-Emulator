@@ -20,7 +20,8 @@ public: // Devices on the NES
 	nes2C02 ppu;
 
 	// 2k RAM
-	uint8_t cpuRam[2048];
+	std::array<uint8_t, 2048> cpuRam;
+	// uint8_t cpuRam[64 * 1024];
 
 	// The Cartridge
 	std::shared_ptr<Cartridge> cart;

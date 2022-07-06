@@ -145,7 +145,12 @@ void nes6502::nmi()
 void nes6502::clock()
 {
 	if (cycles == 0) {
+
+		// Read the next instruction byte
+		// This 8-bit value is used to index the translation table to get
+		// the relevant information about how to implement the instruction
 		opcode = read(pc);
+
 		pc++;
 
 		// Get Starting number of cycles
@@ -677,15 +682,15 @@ uint8_t nes6502::CPY() {
 // Sets Z and N flags appropriately
 uint8_t nes6502::DEC() {
 	fetch();
-	fetched = fetched - 0x01;
+	temp = fetched - 0x01;
 	// Make sure to overwrite the data in memory
-	write(addr_abs, fetched);
+	write(addr_abs, temp);
 	SetFlag(Z, temp == 0x00);
 	SetFlag(N, temp & 0x80);
 	return 0;
 }
 
-// Instruction: DEC - Decrement X Register
+// Instruction: DEX - Decrement X Register
 // Function: X, Z, N = X - 1
 // Sets Z and N flags appropriately
 uint8_t nes6502::DEX() {
@@ -750,9 +755,6 @@ uint8_t nes6502::JMP() {
 	pc = addr_abs;
 	return 0;
 }
-
-//TODO: COUNT ALL THE ONES UNDER THIS AS DONE TODAY!
-
 
 // Instruction: JSR - Jump to Subroutine
 // Function: Pushes the current program counter (minus one) on to
@@ -1132,8 +1134,8 @@ std::map<uint16_t, std::string> nes6502::disassemble(uint16_t nStart, uint16_t n
 		// n >>= 4 means n = right shift 4 (n = n >> 4)
 		for (int i = d - 1; i >= 0; i--, n >>= 4) {
 			s[i] = "0123456789ABCDEF"[n & 0xF]; // n & 0xF is equivalent to n % 16
-			return s;
 		}
+		return s;
 	};
 
 	// Starting at the specified address we read an instruction
@@ -1240,7 +1242,7 @@ std::map<uint16_t, std::string> nes6502::disassemble(uint16_t nStart, uint16_t n
 		}
 		else if (lookup[opcode].addrmode == &nes6502::REL) {
 			value = bus->cpuRead(addr, true);
-			s_inst += "$[REL: " + hex(value, 2) + "], " + hex(value + addr, 4) + " {REL}";
+			s_inst += "$" + hex(value, 2) + " [$" + hex((int8_t)value + addr, 4) + "] {REL}";
 		}
 
 		// Add the formed string to an std::map, using the instruction's

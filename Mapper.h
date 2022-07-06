@@ -11,9 +11,9 @@ public:
 
 public:
 	// Takes the address from ppu/cpu and maps them to address for the ROM
-	virtual bool cpuMapRead(uint16_t addr, uint32_t& mapped_addr) = 0;
+	virtual bool cpuMapRead(uint16_t addr, uint32_t& mapped_addr)  = 0;
 	virtual bool cpuMapWrite(uint16_t addr, uint32_t& mapped_addr) = 0;
-	virtual bool ppuMapRead(uint16_t addr, uint32_t& mapped_addr) = 0;
+	virtual bool ppuMapRead(uint16_t addr, uint32_t& mapped_addr)  = 0;
 	virtual bool ppuMapWrite(uint16_t addr, uint32_t& mapped_addr) = 0;
 
 protected:
