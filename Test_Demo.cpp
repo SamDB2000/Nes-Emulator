@@ -20,6 +20,10 @@ public:
 	bool bEmulationRun = false;
 	float fResidualTime = 0.0f;
 
+	// Used to let user choose palette
+	uint8_t nSelectedPalette = 0x00;
+	uint16_t ram_line = 0x0000;
+
 	std::string hex(uint32_t n, uint8_t d) {
 		std::string s(d, '0');
 		// n >>= 4 means n = right shift 4 (n = n >> 4)
@@ -94,7 +98,7 @@ public:
 		cart = std::make_shared<Cartridge>("nestest.nes");
 
 		// Insert cartridge
-		nes.insertCartidge(cart);
+		nes.insertCartridge(cart);
 
 		// Extract assembly over the whole range
 		mapAsm = nes.cpu.disassemble(0x0000, 0xFFFF);
@@ -103,47 +107,6 @@ public:
 		nes.reset();
 
 		return true;
-		// CPU TEST DEMO
-		// Load Program (assembled at https://www.masswerk.at/6502/assembler.html)
-		// Its purpose is to test the assembly code
-		// This will multiply 10x3
-		/*
-			*=$8000
-			LDX #10		/* Load X register with number 10
-			STX $0000	/* Store X register at address 0000
-			LDX #3		/* Load X register with number 3
-			STX $0001	/* Store X reg value at addr 0001
-			LDY $0000	/* Store value at $0000 to Y reg
-			LDA #0		/* Load accumulator with 0 value
-			CLC			/* Clear the carry bit
-			loop
-			ADC $0001   /* Adds value at $0001 to accumulator
-			DEC $0000	/* Decrememnts value at $0000
-			BNE loop	/* Branch to loop unless Z flag is set due to DEC
-			STA $0002	/* Store the accumulator at $0002
-		*/
-
-		//std::stringstream ss;
-		//ss << "A2 0A 8E 00 00 A2 03 8E 01 00 AC 00 00 A9 00 18 6D 01 00 88 D0 FA 8D 02 00 EA EA EA";
-		//uint16_t nOffset = 0x8000;
-		//while (!ss.eof()) {
-		//	std::string b;
-		//	ss >> b;
-		//	nes.cpuRam[nOffset++] = (uint8_t)std::stoul(b, nullptr, 16);
-		//}
-
-		//// Set Reset Vector
-		//nes.cpuRam[0xFFFC] = 0x00;
-		//nes.cpuRam[0xFFFD] = 0x80;
-
-		//// Don't forget to set IRQ and NMI vectors when testing those
-
-		//// Extract disassembly
-		//mapAsm = nes.cpu.disassemble(0x0000, 0xFFFF);
-
-		//// Reset
-		//nes.cpu.reset();
-		//return true;
 	}
 
 	bool OnUserUpdate(float fElapsedTime) {
@@ -170,6 +133,13 @@ public:
 				do { nes.clock(); } while (nes.cpu.complete());
 			}
 
+			if (GetKey(olc::Key::N).bPressed) {
+				for(int i = 0; i < 10; i++) {
+					do { nes.clock(); } while (!nes.cpu.complete());
+					do { nes.clock(); } while (nes.cpu.complete());
+				}
+			}
+			
 			// Emulate one whole frame
 			if (GetKey(olc::Key::F).bPressed) {
 				// Clock enough times to draw a single frame
@@ -184,35 +154,38 @@ public:
 		// Reset on R key
 		if (GetKey(olc::Key::R).bPressed) nes.reset();
 		if (GetKey(olc::Key::SPACE).bPressed) bEmulationRun = !bEmulationRun;
+		if (GetKey(olc::Key::P).bPressed) (++nSelectedPalette) &= 0x07;
+
+		if (GetKey(olc::Key::DOWN).bPressed) {
+			ram_line += 0x0040;
+		}
+		if (GetKey(olc::Key::UP).bPressed) {
+			ram_line -= 0x0040;
+			if (ram_line < 0) {
+				ram_line = 0x0000;
+			}
+		}
 
 		drawCPU(516, 2);
 		drawCode(516, 72, 26);
+		// drawRam(2, 2, ram_line, 32, 16);
 
+		// Draw palettes and pattern tables
+		const int nSwatchSize = 6; // ??
+		for (int p = 0; p < 8; p++) // for each palette
+			for (int s = 0; s < 4; s++) // for each index
+				FillRect(516 + p * (nSwatchSize * 5) + s * nSwatchSize, 340,
+					nSwatchSize, nSwatchSize, nes.ppu.GetColorFromPaletteRam(p, s));
+
+		// Draw slection reticule around selected palette
+		DrawRect(516 + nSelectedPalette * (nSwatchSize * 5) - 1, 339, (nSwatchSize * 4), nSwatchSize, olc::WHITE);
+
+		// Draw left and then right pattern table
+		DrawSprite(516, 348, &nes.ppu.GetPatternTable(0, nSelectedPalette));
+		DrawSprite(648, 348, &nes.ppu.GetPatternTable(1, nSelectedPalette));
+
+		// Draw rendered output
 		DrawSprite(0, 0, &nes.ppu.GetScreen(), 2);
-
-		// CPU Test/Demo
-		//if (GetKey(olc::Key::SPACE).bPressed) {
-		//	do {
-		//		nes.cpu.clock();
-		//	} while (!nes.cpu.complete());
-		//}
-
-		//if (GetKey(olc::Key::R).bPressed)
-		//	nes.cpu.reset();
-
-		//if (GetKey(olc::Key::I).bPressed)
-		//	nes.cpu.irq();
-
-		//if (GetKey(olc::Key::N).bPressed)
-		//	nes.cpu.nmi();
-
-		//// Draw Ram Page 0x00
-		//drawRam(2, 2, 0x0000, 16, 16);
-		//drawRam(2, 182, 0x1000, 16, 16);
-		//drawCPU(448, 2);
-		//drawCode(448, 72, 26);
-
-		//DrawString(10, 370, "SPACE = Step Instruction    R = Reset    I = IRQ    N = NMI");
 
 		return true;
 	}

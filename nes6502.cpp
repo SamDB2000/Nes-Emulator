@@ -38,15 +38,18 @@ nes6502::~nes6502() {
 }
 
 // Reads a single byte from the bus, located at the specified 16-bit address
-uint8_t nes6502::read(uint16_t a)
+uint8_t nes6502::read(uint16_t addr)
 {
-	return bus->cpuRead(a, false);
+	// The reason that this is false is because cpuRead will change the
+	// state of some devices on the bus. However we don't want this to
+	// happen when we run the disassembler.
+	return bus->cpuRead(addr, false);
 }
 
 // Writes a byte to the bus at the specified address
-void nes6502::write(uint16_t a, uint8_t d)
+void nes6502::write(uint16_t addr, uint8_t data)
 {
-	return bus->cpuWrite(a, d);
+	return bus->cpuWrite(addr, data);
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -65,13 +68,19 @@ void nes6502::reset()
 	x = 0;
 	y = 0;
 	stkp = 0xFD;
-	status = 0x00 | U;
-
+	status = 0x00 | U | I;
+	
+	
+	// For a simple testing this can be changed
+	// Change to 0x04FC for cpu testing.
+	// This sets the program counter
 	addr_abs = 0xFFFC;
 	uint16_t lo = read(addr_abs + 0);
 	uint16_t hi = read(addr_abs + 1);
-
 	pc = (hi << 8) | lo;
+	
+	// COMMENT THIS WHEN NOT TESTING CPU USING NESTEST
+	// pc = 0xC000;
 
 	addr_abs = 0x0000;
 	addr_rel = 0x0000;
@@ -151,6 +160,13 @@ void nes6502::clock()
 		// the relevant information about how to implement the instruction
 		opcode = read(pc);
 
+#ifdef LOGMODE
+		uint16_t log_pc = pc;
+#endif
+
+		// Set unused status flag bit
+		SetFlag(U, true);
+
 		pc++;
 
 		// Get Starting number of cycles
@@ -164,7 +180,22 @@ void nes6502::clock()
 
 		// Each address and op function returns a 1 if they need an additional clock cycle, 0 otherwise
 		cycles += (additional_cycle1 & additional_cycle2);
+
+		SetFlag(U, true);
+
+#ifdef LOGMODE
+		// This logger dumps the processor state every cycle.
+		// Used for debugging only, as it is very slow.
+		if (logfile == nullptr) 
+			fopen_s(&logfile, "nes6502.txt", "wt");
+		if (logfile != nullptr) {
+			fprintf(logfile, "%04X                              A:%02X X:%02X Y:%02X P:%02X SP:%02X\n",
+				log_pc, a, x, y, status, stkp);
+		}
+#endif
 	}
+
+	clock_count++;
 
 	cycles--;
 }
@@ -205,6 +236,8 @@ uint8_t nes6502::IMM()
 }
 
 // Zero page addressing
+// This is used to save program bytes, since it only requires 1 byte
+// for an address within the first page.
 uint8_t nes6502::ZP0()
 {
 	addr_abs = read(pc);
@@ -256,7 +289,7 @@ uint8_t nes6502::ABX()
 	pc++;
 
 	addr_abs = (hi << 8) | lo;
-	addr_abs += x; // Adds y offset
+	addr_abs += x; // Adds x offset
 
 	// If the address has changed to a different page after offset
 	if ((addr_abs & 0xFF00) != (hi << 8)) {
@@ -303,7 +336,6 @@ uint8_t nes6502::IND()
 	uint16_t ptr_hi = read(pc);
 	pc++;
 
-	// Assemble ptr (hi + lo)
 	uint16_t ptr = (ptr_hi << 8) | ptr_lo;
 
 	if (ptr_lo == 0x00FF) { // simulate the page boundary bug
@@ -362,8 +394,12 @@ uint8_t nes6502::REL()
 {
 	addr_rel = read(pc);
 	pc++;
+	// The wiki says that the pc gets incremented twice,
+	// but source code doesn't have this. 
+	// pc++;
+	// After trying, it only messes things up... curious
 
-	// Check if first bit is a 1 (if it is signed)
+	// Check if first bit is a 1 (if it it's signed)
 	if (addr_rel & 0x80)
 		addr_rel |= 0xFF00; // Set the high byte to all 1's
 	return 0;
@@ -396,7 +432,7 @@ uint8_t nes6502::ADC()
 
 	// Set the overflow bit based off of if a pos + pos = neg  or if  neg + neg = pos
 	// Logical way of saying that if the result has a different sign (first bit) then both a and m
-	SetFlag(V, (~( (uint16_t)a ^ (uint16_t)fetched ) & ( (uint16_t)a ^ (uint16_t)result )) & 0x0080);
+	SetFlag(V, (~((uint16_t)a ^ (uint16_t)fetched) & ((uint16_t)a ^ (uint16_t)result)) & 0x0080);
 
 	a = result & 0x00FF; // Load the 8-bit result into the accumulator
 
@@ -541,9 +577,11 @@ uint8_t nes6502::BPL()
 {
 	if (GetFlag(N) == 0)
 	{
+		// Add a cycle upon successful branch
 		cycles++;
 		addr_abs = pc + addr_rel;
 
+		// Add a cycle if branching to a new page
 		if ((addr_abs & 0xFF00) != (pc & 0xFF00))
 			cycles++;
 
@@ -642,38 +680,35 @@ uint8_t nes6502::CLV()
 }
 
 // Instruction: CMP - Compare Memory and Accumulator
-// Function: Change flags based on fetched data and accumulator
-// NOTE: This may need to be casted to uint16_t
+// Function: Change flags based on fetched data and accumulator Z,C,N = A - M
 uint8_t nes6502::CMP() {
 	fetch();
-	temp = a - fetched;
-	SetFlag(C, temp >= 0x00);
-	SetFlag(Z, temp == 0x00);
+	temp = (uint16_t)a - (uint16_t)fetched;
+	SetFlag(C, a >= fetched);
+	SetFlag(Z, a == fetched);
 	SetFlag(N, temp & 0x80);
 	return 1;
 }
 
 // Instruction: CPX - Compare Memory and X Register
 // Function: Change C, Z, N, flags based on fetched data and X Register
-// NOTE: This may need to be casted to uint16_t
 uint8_t nes6502::CPX() {
 	fetch();
-	temp = x - fetched;
-	SetFlag(C, temp >= 0x00);
-	SetFlag(Z, temp == 0x00);
-	SetFlag(N, temp & 0x80);
+	temp = (uint16_t)x - (uint16_t)fetched;
+	SetFlag(C, x >= fetched);
+	SetFlag(Z, (temp & 0x00FF) == 0x0000);
+	SetFlag(N, temp & 0x0080);
 	return 0;
 }
 
-// Instruction: CPX - Compare Memory and Y Register
+// Instruction: CPY - Compare Memory and Y Register
 // Function: Change C, Z, N, flags based on fetched data and Y Register
-// NOTE: This may need to be casted to uint16_t
 uint8_t nes6502::CPY() {
 	fetch();
-	temp = y - fetched;
-	SetFlag(C, temp >= 0x00);
-	SetFlag(Z, temp == 0x00);
-	SetFlag(N, temp & 0x80);
+	temp = (uint16_t)y - (uint16_t)fetched;
+	SetFlag(C, y >= fetched);
+	SetFlag(Z, (temp & 0x00FF) == 0x0000);
+	SetFlag(N, temp & 0x0080);
 	return 0;
 }
 
@@ -742,8 +777,8 @@ uint8_t nes6502::INX() {
 // Instruction: Increment Y Register
 uint8_t nes6502::INY() {
 	y = y + 0x01;
-	SetFlag(Z, x == 0x00);
-	SetFlag(N, x & 0x80);
+	SetFlag(Z, y == 0x00);
+	SetFlag(N, y & 0x80);
 	return 0;
 }
 
@@ -810,9 +845,9 @@ uint8_t nes6502::LDY() {
 // The bit that was in the bit 0 is shifted onto the carry flag.
 uint8_t nes6502::LSR() {
 	fetch();
-	SetFlag(C, fetched & 0x0001);
+	SetFlag(C, (uint16_t)fetched & 0x0001);
 	// Right shift 8 bit temp variable
-	temp = fetched >> 1;
+	temp = (uint16_t)fetched >> 1;
 	SetFlag(Z, (temp & 0x00FF) == 0x0000);
 	SetFlag(N, temp & 0x0080);
 
@@ -830,7 +865,7 @@ uint8_t nes6502::LSR() {
 
 uint8_t nes6502::NOP()
 {
-	// Sadly not all NOPs are equal, Ive added a few here
+	// Sadly not all NOPs are equal, I've added a few here
 	// based on https://wiki.nesdev.com/w/index.php/CPU_unofficial_opcodes
 	// and will add more based on game compatibility, and ultimately
 	// I'd like to cover all illegal opcodes too
@@ -956,9 +991,9 @@ uint8_t nes6502::RTI()
 	status &= ~U;
 
 	stkp++;
-	pc = (uint16_t)read(0x0100 + stkp);
-	stkp++;
 	pc |= (uint16_t)read(0x0100 + stkp);
+	stkp++;
+	pc |= (uint16_t)read(0x0100 + stkp) << 8;
 	return 0;
 }
 
@@ -992,11 +1027,11 @@ uint8_t nes6502::SBC()
 	uint16_t value = ((uint16_t)fetched) ^ 0x00FF;
 
 	// Perform the exact same addition procedure
-	uint16_t result = (uint16_t)a + (uint16_t)fetched + (uint16_t)GetFlag(C);
-	SetFlag(C, result > 255);
+	uint16_t result = (uint16_t)a + value + (uint16_t)GetFlag(C);
+	SetFlag(C, result & 0xFF00);
 	SetFlag(Z, (result & 0x00FF) == 0);
-	SetFlag(N, result & 0x80);
-	SetFlag(V, (~((uint16_t)a ^ (uint16_t)fetched) & ((uint16_t)a ^ (uint16_t)result)) & 0x0080);
+	SetFlag(N, result & 0x0080);
+	SetFlag(V, (result ^ (uint16_t)a) & (result ^ value) & 0x0080);
 	a = result & 0x00FF; // Load the 8-bit result into the accumulator
 	return 1; // might return an extra clock cycle
 }
@@ -1242,6 +1277,7 @@ std::map<uint16_t, std::string> nes6502::disassemble(uint16_t nStart, uint16_t n
 		}
 		else if (lookup[opcode].addrmode == &nes6502::REL) {
 			value = bus->cpuRead(addr, true);
+			addr++;
 			s_inst += "$" + hex(value, 2) + " [$" + hex((int8_t)value + addr, 4) + "] {REL}";
 		}
 

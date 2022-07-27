@@ -37,25 +37,24 @@ uint8_t Bus::cpuRead(uint16_t addr, bool bReadOnly)
 {
 	uint8_t data = 0x00;
 
-	// If the cartridge is trying to interfere, nothing happens
+	// Comment cartridge override for cpu testing
+
+	// if the cartridge is trying to interfere, nothing happens
 	if (cart->cpuRead(addr, data)) {
-
+		// cartridge address space
 	}
-	// Check for correct address locations (8kb range for RAM)
-	else if (addr >= 0x0000 && addr <= 0x1fff) {
-		data = cpuRam[addr & 0x07ff];
+	// check for correct address locations (8kb range for ram)
+	else if (addr >= 0x0000 && addr <= 0x1FFF) {
+		// Mirrored every 2048 bytes
+		data = cpuRam[addr & 0x07FF];
 	}
-	else if (addr >= 2000 && addr <= 0x3fff) {
-		ppu.cpuRead(addr & 0x0007, bReadOnly);
+	else if (addr >= 2000 && addr <= 0x3FFF) {
+		data = ppu.cpuRead(addr & 0x0007, bReadOnly);
 	}
-
-	// ERASE WHEN DONE TESTING CPU
-	//data = cpuRam[addr];
-
 	return data;
 }
 
-void Bus::insertCartidge(const std::shared_ptr<Cartridge>& cartridge) {
+void Bus::insertCartridge(const std::shared_ptr<Cartridge>& cartridge) {
 	this->cart = cartridge;
 	ppu.ConnectCartridge(cartridge);
 }

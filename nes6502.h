@@ -4,7 +4,13 @@
 #include <string>
 #include <map>
 
-// #include "Bus.h"
+// Comment or uncomment to toggle logging
+// the log file is big and will slow down the emulation
+// #define LOGMODE
+
+#ifdef LOGMODE
+#include <stdio.h>
+#endif
 
 // Declaration of bus class
 class Bus;
@@ -89,6 +95,8 @@ public:
 	// Cycles left for the duration of the instruction
 	uint8_t cycles = 0;
 
+	uint32_t clock_count = 0;
+
 	bool complete(); // helper function
 
 	void ConnectBus(Bus* n) {
@@ -121,5 +129,11 @@ private:
 	};
 
 	std::vector<INSTRUCTION> lookup; // Array for instructions
+
+#ifdef LOGMODE
+	private:
+		FILE* logfile = nullptr;
+#endif // LOGMODE
+
 };
 
