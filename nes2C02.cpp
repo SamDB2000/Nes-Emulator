@@ -3,7 +3,7 @@
 
 nes2C02::nes2C02() {
 
-    // Fill the entry with all pixel colors that the PPU was capable of displaying
+    // Fill the entry with all 64 pixel colors that the PPU was capable of displaying
     palScreen[0x00] = olc::Pixel(84, 84, 84);
     palScreen[0x01] = olc::Pixel(0, 30, 116);
     palScreen[0x02] = olc::Pixel(8, 16, 144);
@@ -87,6 +87,13 @@ uint8_t nes2C02::cpuRead(uint16_t addr, bool rdonly)
     case 0x0001: // Mask
         break;
     case 0x0002: // Status
+        status.vblank = 1; // this is a hack for now
+        // Get only the first three bits
+        data = (status.reg & 0xE0) | (ppu_data_buffer & 0x1F);
+
+        // vblank and latch are cleared after read
+        status.vblank = 0;
+        address_latch = 0;
         break;
     case 0x0003: // OAM Address
         break;
@@ -97,6 +104,14 @@ uint8_t nes2C02::cpuRead(uint16_t addr, bool rdonly)
     case 0x0006: // PPU Address
         break;
     case 0x0007: // PPU Data
+        // set output to what's currently buffered
+        data = ppu_data_buffer;
+        // Since it takes more than one cycle to do this, we first buffer it
+        ppu_data_buffer = ppuRead(ppu_address);
+
+        // Doesn't work for all addresses (doesn't take multiple cyclces for palettes)
+        if (ppu_address > 0x3F00) data = ppu_data_buffer;
+        // ppu_address++;
         break;
     }
 
@@ -107,8 +122,10 @@ void nes2C02::cpuWrite(uint16_t addr, uint8_t data)
 {
     switch (addr) {
     case 0x0000: // Control
+        control.reg = data;
         break;
     case 0x0001: // Mask
+        mask.reg = data;
         break;
     case 0x0002: // Status
         break;
@@ -119,8 +136,18 @@ void nes2C02::cpuWrite(uint16_t addr, uint8_t data)
     case 0x0005: // Scroll
         break;
     case 0x0006: // PPU Address
+        if (address_latch == 0) {
+            ppu_address = (ppu_address & 0x00FF) | (data << 8);
+            address_latch = 1;
+        }
+        else {
+            ppu_address = (ppu_address & 0xFF00) | data;
+            address_latch = 0;
+        }
         break;
     case 0x0007: // PPU Data
+        ppuWrite(ppu_address, data);
+        ppu_address++;
         break;
     }
 }
@@ -132,9 +159,43 @@ uint8_t nes2C02::ppuRead(uint16_t addr, bool rdonly)
     addr &= 0x3FFF; 
 
     // Option of reading from the cartridge first
-    if (cart->ppuRead(addr, data)) {
+   /* if (cart->ppuRead(addr, data)) {
 
+    }*/
+    // else 
+    if (addr >= 0x0000 && addr <= 0x1FFF) {
+        // We're in pattern table memory
+
+        // Mask the most significant bit for left or right pattern table
+        // >> 12 so that the most significant hex digit in hex is brought down (value = 0 or 1)
+        data = tblPattern[(addr & 0x1000) >> 12][addr & 0x0FFF];
     }
+    else if (addr >= 0x2000 && addr <= 0x3EFF) {
+        // We're in nametable memory
+        // NOTE: 0x3000-0x3EFF are mirrors of 0x2000-0x2EFF
+    }
+    else if (addr >= 0x3F00 && addr <= 0x3FFF) {
+        // We're in Palette RAM
+        // NOTE: 0x3F20-0x3FFF are mirrors of 0x3F00-0x3F1F
+
+        // Get the right index for our tblPalette by masking the bottom 5 bits
+        addr &= 0x001F;
+
+        // Addresses $3F10/$3F14/$3F18/$3F1C are mirrors of $3F00/$3F04/$3F08/$3F0C
+        // Note that this goes for writing as well as reading
+        // Fun fact: The sky will be black in Super Mario Bros. if this is not
+        // implemented since it writes the backdrop color through $3F10
+        //
+        // We're just hardcoding the bg color mirroring
+        if (addr == 0x0010) addr = 0x0000;
+        if (addr == 0x0014) addr = 0x0004;
+        if (addr == 0x0018) addr = 0x0008;
+        if (addr == 0x001C) addr = 0x000C;
+        
+        // Use the tblPalette array that we're using as VRAM
+        data = tblPalette[addr];
+    }
+
     return data;
 }
 
@@ -145,6 +206,38 @@ void nes2C02::ppuWrite(uint16_t addr, uint8_t data)
     // Option to write to the cartridge first
     if (cart->ppuWrite(addr, data)) {
 
+    }
+    else if (addr >= 0x0000 && addr <= 0x1FFF) {
+        // We're in pattern table memory
+
+        // Pattern memory is usually a ROM so this may not be necessary
+        tblPattern[(addr & 0x1000) >> 12][addr & 0x0FFF] = data;
+    }
+    else if (addr >= 0x2000 && addr <= 0x3EFF) {
+        // We're in nametable memory
+        // NOTE: 0x3000-0x3EFF are mirrors of 0x2000-0x2EFF
+    }
+    else if (addr >= 0x3F00 && addr <= 0x3FFF) {
+        // We're in Palette RAM
+        // NOTE: 0x3F20-0x3FFF are mirrors of 0x3F00-0x3F1F
+
+        // Get the right index for our tblPalette by masking the bottom 5 bits
+        addr &= 0x001F;
+
+        // Addresses $3F10/$3F14/$3F18/$3F1C are mirrors of $3F00/$3F04/$3F08/$3F0C
+        // Note that this goes for writing as well as reading
+        // Fun fact: The sky will be black in Super Mario Bros. if this is not
+        // implemented since it writes the backdrop color through $3F10
+        //
+        // We're just hardcoding the bg color mirroring
+        if (addr == 0x0010) addr = 0x0000;
+        if (addr == 0x0014) addr = 0x0004;
+        if (addr == 0x0018) addr = 0x0008;
+        if (addr == 0x001C) addr = 0x000C;
+
+        // Use the tblPalette array that we're using as VRAM
+        tblPalette[addr] = data;
+        
     }
 }
 
@@ -179,6 +272,61 @@ olc::Sprite& nes2C02::GetNameTable(uint8_t i) {
     return sprNameTable[i];
 }
 
-olc::Sprite& nes2C02::GetPatternTable(uint8_t i) {
+olc::Sprite& nes2C02::GetPatternTable(uint8_t i, uint8_t palette) {
+    // For a given pattern table there are 16x16 tiles
+    for (uint16_t nTileY = 0; nTileY < 16; nTileY++) {
+        for (uint16_t nTileX = 0; nTileX < 16; nTileX++) {
+            // Want to turn 2d coordinate into a 1D coordinate to index the pattern memory (byte offset)
+            // 16 tiles of 16 bytes for Y, 16 bytes per tile for X
+            uint16_t nOffset = (nTileY * 16 * 16) + nTileX * 16;
+
+            // for each tile we have 8 rows of 8 pixels
+            for (uint16_t row = 0; row < 8; row++) {
+     
+                // For each row, we need to read both bit planes of the character
+                // in order to extreact the least significant and most significant
+                // bits of the 2 bit pixel value. Each character is stored as 64 bits
+                // of lsb, followed by 64 bits of msb. This conviniently means that
+                // two corresponding rows are always 8 bytes apart in memory.
+
+                // Each pattern table is 4kb. i gives which pattern table.
+                // We then add the offset and row for the specific byte.
+                // We read from the least significant bit plane first.
+                uint8_t tile_lsb = ppuRead(i * 0x1000 + nOffset + row + 0x0000);
+                uint8_t tile_msb = ppuRead(i * 0x1000 + nOffset + row + 0x0008);
+
+                // These point to two bytes each containing 8 pixels worth of data
+                // We need to combine the bytes to give us the final bitmap color (0,1,2,3)
+                for (uint16_t col = 0; col < 8; col++) {
+                    // Adding the least significant bit of each byte for the pixel color
+                    uint8_t pixel = (tile_lsb & 0x01) + (tile_msb & 0x01);
+                    // Bit-shift by 1 so next iteration the least significant bits are correct
+                    tile_lsb >>= 1; tile_msb >>= 1;
+
+                    // Now we have an NES pixel value and location, so let's draw that into 
+                    // the olc sprite that represents this section of the pattern memory. 
+                    sprPatternTable[i].SetPixel(
+                        nTileX * 8 + (7 - col), // Because we're using the lsb of the row word first
+                                                // we are effectively reading the row from right to left,
+                                                // so we need to draw the row "backwards"
+                        nTileY * 8 + row,
+                        GetColorFromPaletteRam(palette, pixel)
+                    );
+                }
+            }
+        }
+    }
     return sprPatternTable[i];
+}
+
+// Uses the 2-bit palette and pixel values to return the correct color of a pixel
+olc::Pixel& nes2C02::GetColorFromPaletteRam(uint8_t palette, uint8_t pixel) {
+    // pixel value gives two bits corresponding to the color in the palette
+    // palette id (2-bits) gives which palette (0-3 = bg, 4-7 = fg)
+    // 0x3F00 - offset into memory where palettes are stored
+    // & 0x3F - used to make sure we don't overstep palScreen array bounds
+    return palScreen[ppuRead(0x3F00 + (palette << 2) + pixel) & 0x3F];
+
+    // Note: we don't access the tblPalette directly, instead we know that ppuRead()
+    // will map the address onto the seperate small RAM attached to the PPU bus.
 }

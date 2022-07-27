@@ -14,8 +14,7 @@ Cartridge::Cartridge(const std::string& sFileName) {
 		uint8_t tv_system1;
 		uint8_t tv_system2;
 		char unused[5];
-	} header; // we're creating a header variable after declaration
-	// Didn't know that till now!
+	} header;
 
 	std::ifstream ifs; // input file stream
 	// open file in binary
