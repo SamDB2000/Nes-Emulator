@@ -71,8 +71,7 @@ void nes6502::reset()
 	status = 0x00 | U | I;
 	
 	
-	// For a simple testing this can be changed
-	// Change to 0x04FC for cpu testing.
+	// For simple testing this can be changed
 	// This sets the program counter
 	addr_abs = 0xFFFC;
 	uint16_t lo = read(addr_abs + 0);
@@ -1159,7 +1158,6 @@ bool nes6502::complete()
 std::map<uint16_t, std::string> nes6502::disassemble(uint16_t nStart, uint16_t nStop) {
 	uint32_t addr = nStart;
 	uint8_t value = 0x00, lo = 0x00, hi = 0x00;
-	// Need a comment for this, but will read on to see how it's used
 	std::map<uint16_t, std::string> mapLines;
 	uint16_t line_addr = 0;
 
@@ -1211,9 +1209,7 @@ std::map<uint16_t, std::string> nes6502::disassemble(uint16_t nStart, uint16_t n
 			lo = bus->cpuRead(addr, true);
 			addr++;
 			hi = 0x00;
-			value = (hi << 8) | lo;
-			s_inst += "$" + hex(value, 2) + " {ZP0}";
-			// I'm doing this differently than OLC
+			s_inst += "$" + hex(lo, 2) + " {ZP0}";
 		}
 		else if (lookup[opcode].addrmode == &nes6502::ZPX) {
 			// Zero page addressing with x reg offset

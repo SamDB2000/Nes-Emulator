@@ -70,5 +70,10 @@ void Bus::clock() {
 	if (nSystemClockCounter % 3 == 0) {
 		cpu.clock();
 	}
+
+	if (ppu.nmi) {
+		ppu.nmi = false;
+		cpu.nmi();
+	}
 	nSystemClockCounter++;
 }

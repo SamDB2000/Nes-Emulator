@@ -72,14 +72,14 @@ public:
 			DrawString(x, nLineY, it_a->second, olc::CYAN);
 			while (nLineY < (nLines * 10) + y) {
 				nLineY += 10;
-				if (++it_a != mapAsm.end()) {
+				if (it_a != mapAsm.end()) {
 					DrawString(x, nLineY, it_a->second);
+					it_a++;
 				}
 			}
 		}
 
 		it_a = mapAsm.find(nes.cpu.pc);
-		// maybe give some thought into understanding this later
 		nLineY = (nLines >> 1) * 10 + y;
 		if (it_a != mapAsm.end()) {
 			while (nLineY > y) {
@@ -95,7 +95,7 @@ public:
 		// ROM/MAPPER DEMO
 
 		// Load the cartridge by creating the shared ptr object
-		cart = std::make_shared<Cartridge>("nestest.nes");
+		cart = std::make_shared<Cartridge>("DK.nes");
 
 		// Insert cartridge
 		nes.insertCartridge(cart);

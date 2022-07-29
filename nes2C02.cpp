@@ -87,7 +87,6 @@ uint8_t nes2C02::cpuRead(uint16_t addr, bool rdonly)
     case 0x0001: // Mask
         break;
     case 0x0002: // Status
-        status.vblank = 1; // this is a hack for now
         // Get only the first three bits
         data = (status.reg & 0xE0) | (ppu_data_buffer & 0x1F);
 
@@ -111,7 +110,7 @@ uint8_t nes2C02::cpuRead(uint16_t addr, bool rdonly)
 
         // Doesn't work for all addresses (doesn't take multiple cyclces for palettes)
         if (ppu_address > 0x3F00) data = ppu_data_buffer;
-        // ppu_address++;
+        ppu_address++;
         break;
     }
 
@@ -159,11 +158,10 @@ uint8_t nes2C02::ppuRead(uint16_t addr, bool rdonly)
     addr &= 0x3FFF; 
 
     // Option of reading from the cartridge first
-   /* if (cart->ppuRead(addr, data)) {
+    if (cart->ppuRead(addr, data)) {
 
-    }*/
-    // else 
-    if (addr >= 0x0000 && addr <= 0x1FFF) {
+    }
+    else if (addr >= 0x0000 && addr <= 0x1FFF) {
         // We're in pattern table memory
 
         // Mask the most significant bit for left or right pattern table
@@ -246,6 +244,31 @@ void nes2C02::ConnectCartridge(const std::shared_ptr<Cartridge>& cartridge) {
 }
 
 void nes2C02::clock() {
+
+    // https://www.nesdev.org/wiki/PPU_rendering
+    // This is where I'm getting all the information on rendering that I'm performing here
+    // 
+    // Pre-render line -1 (or 261 depending on implementation)
+    // This is a dummy scanline, whose sole purpose is to fill the shift registers with 
+    // the data for the first two tiles of the next scanline.
+    //
+    if (scanline == -1 && cycle == 1) {
+        status.vblank = 0;
+
+    }
+    // 
+    // 
+    // The VBlank flag of the PPU is set at tick 1 (the second tick) of scanline 241, 
+    // where the VBlank NMI also occurs. 
+    // The PPU makes no memory accesses during these scanlines, 
+    // so PPU memory can be freely accessed by the program
+    if (scanline == 241 && cycle == 1) {
+        status.vblank = 1;
+        if (control.nmi_enable)
+            // The nmi variable is handled by the bus and calls the cpu nmi() function
+            nmi = true;
+    }
+
     // Fake some noise for now
     sprScreen.SetPixel(cycle - 1, scanline, palScreen[(rand() % 2) ? 0x3F : 0x30]);
 

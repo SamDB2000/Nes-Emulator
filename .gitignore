@@ -3,6 +3,12 @@
 ##
 ## Get latest from https://github.com/github/gitignore/blob/master/VisualStudio.gitignore
 
+# Manually inputted files:
+*.txt
+olcPixelGameEngine.h
+nestest.nes
+*.nes
+
 # User-specific files
 *.rsuser
 *.suo
