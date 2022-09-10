@@ -104,7 +104,7 @@ private:
 	bool OnUserCreate()
 	{
 		// Load the cartridge
-		cart = std::make_shared<Cartridge>("nestest.nes");
+		cart = std::make_shared<Cartridge>("roms/nestest.nes");
 		/*if (!cart->ImageValid())
 			return false;*/
 
@@ -147,6 +147,29 @@ private:
 				// complete for additional system clock cycles. Drain
 				// those out
 				do { nes.clock(); } while (nes.cpu.complete());
+			}
+
+			if (GetKey(olc::Key::N).bPressed)
+			{
+				for (int i = 0; i < 10; i++) {
+					// Clock enough times to execute a whole CPU instruction
+					do { nes.clock(); } while (!nes.cpu.complete());
+					// CPU clock runs slower than system clock, so it may be
+					// complete for additional system clock cycles. Drain
+					// those out
+					do { nes.clock(); } while (nes.cpu.complete());
+				}
+			}
+			if (GetKey(olc::Key::M).bPressed)
+			{
+				for (int i = 0; i < 100; i++) {
+					// Clock enough times to execute a whole CPU instruction
+					do { nes.clock(); } while (!nes.cpu.complete());
+					// CPU clock runs slower than system clock, so it may be
+					// complete for additional system clock cycles. Drain
+					// those out
+					do { nes.clock(); } while (nes.cpu.complete());
+				}
 			}
 
 			// Emulate one whole frame

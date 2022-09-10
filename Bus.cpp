@@ -60,20 +60,36 @@ void Bus::insertCartridge(const std::shared_ptr<Cartridge>& cartridge) {
 }
 
 void Bus::reset() {
+	cart->reset();
 	cpu.reset();
+	ppu.reset();
 	nSystemClockCounter = 0;
 }
 
 void Bus::clock() {
+	// The running frequency is controlled by whatever calls this function.
+	// So here we "divide" the clock as necessary and call the
+	// peripheral devices clock() function at the correct times
+
+	// The fasted clock frequency the digial system cares about is
+	// equivalent to the PPU clock. So the PPU is clocked
+	// each times this function is called
 	ppu.clock();
-	//the cpu clock runs 3x slower than the ppu clock
+
+	// The cpu clock runs 3x slower than the ppu clock so we only call
+	// it's clock function every 3 times this function is called.
+	// We use nSystemClockCounter to keep track of this
 	if (nSystemClockCounter % 3 == 0) {
 		cpu.clock();
 	}
 
+	// The PPU is capable of emitting an interrupt to indicate the
+	// vertical blanking period has been entered. If it has, we need
+	// to send that irq to the CPU.
 	if (ppu.nmi) {
 		ppu.nmi = false;
 		cpu.nmi();
 	}
+
 	nSystemClockCounter++;
 }

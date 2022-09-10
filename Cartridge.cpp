@@ -30,6 +30,8 @@ Cartridge::Cartridge(const std::string& sFileName) {
 
 		// Determine Mapper ID
 		nMapperID = ((header.mapper2 >> 4) << 4) | (header.mapper1 >> 4);
+		mirror = (header.mapper1 & 0x01) ? VERTICAL : HORIZONTAL;
+		
 
 		// There are 3 types of iNES files, for now we'll focus on type 1
 
@@ -49,12 +51,16 @@ Cartridge::Cartridge(const std::string& sFileName) {
 
 			// Find the size of chr memory
 			nCHRBanks = header.chr_rom_chunks;
-			// Resive vRAM based on # of banks (8kb per bank of chr memory)
-			vCHRMemory.resize(nCHRBanks * 8192);
+			if (nCHRBanks == 0) {
+				vCHRMemory.resize(8192);
+			}
+			else {
+				// Resive vRAM based on # of banks (8kb per bank of chr memory)
+				vCHRMemory.resize(nCHRBanks * 8192);
+			}
+			
 			// Read the data from the file into the vector
 			ifs.read((char*)vCHRMemory.data(), vCHRMemory.size());
-
-
 		}
 
 		if (fileType == 2) {
@@ -95,7 +101,7 @@ bool Cartridge::cpuRead(uint16_t addr, uint8_t& data)
 bool Cartridge::cpuWrite(uint16_t addr, uint8_t data)
 {
 	uint32_t mapped_addr = 0;
-	if (pMapper->cpuMapWrite(addr, mapped_addr)) {
+	if (pMapper->cpuMapWrite(addr, mapped_addr, data)) {
 		vPRGMemory[mapped_addr] = data;
 		return true;
 	}
@@ -123,4 +129,10 @@ bool Cartridge::ppuWrite(uint16_t addr, uint8_t data)
 	}
 	else
 		return false;
+}
+
+void Cartridge::reset() {
+	// Note: This does not reset the ROM contents,
+	// but it does reset the mapper
+	if (pMapper != nullptr) pMapper->reset();
 }

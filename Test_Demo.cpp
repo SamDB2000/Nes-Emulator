@@ -10,19 +10,21 @@
 class Demo_nes6502 : public olc::PixelGameEngine
 {
 public:
-	Demo_nes6502() { sAppName = "nes6502 Demonstration"; }
+	Demo_nes6502() { sAppName = "PPU Background Demonstration"; }
 
 	std::shared_ptr<Cartridge> cart;
 	Bus nes;
-	std::map<uint16_t, std::string> mapAsm;
-
-	// If true, going to try to run the emulation in real time
+	
+	// If true, run the emulation in real time
 	bool bEmulationRun = false;
 	float fResidualTime = 0.0f;
 
 	// Used to let user choose palette
 	uint8_t nSelectedPalette = 0x00;
-	uint16_t ram_line = 0x0000;
+	uint16_t ram_line = 0x2000;
+
+private:
+	std::map<uint16_t, std::string> mapAsm;
 
 	std::string hex(uint32_t n, uint8_t d) {
 		std::string s(d, '0');
@@ -72,9 +74,9 @@ public:
 			DrawString(x, nLineY, it_a->second, olc::CYAN);
 			while (nLineY < (nLines * 10) + y) {
 				nLineY += 10;
-				if (it_a != mapAsm.end()) {
+				if (++it_a != mapAsm.end()) {
 					DrawString(x, nLineY, it_a->second);
-					it_a++;
+					// it_a++;
 				}
 			}
 		}
@@ -92,10 +94,11 @@ public:
 	}
 
 	bool OnUserCreate() {
-		// ROM/MAPPER DEMO
-
 		// Load the cartridge by creating the shared ptr object
-		cart = std::make_shared<Cartridge>("DK.nes");
+		cart = std::make_shared<Cartridge>("roms/nestest.nes");
+
+		//if (!cart->ImageValid())
+		//	return false;
 
 		// Insert cartridge
 		nes.insertCartridge(cart);
@@ -105,12 +108,25 @@ public:
 
 		// Reset NES
 		nes.reset();
-
 		return true;
 	}
 
 	bool OnUserUpdate(float fElapsedTime) {
 		Clear(olc::DARK_BLUE);
+
+		// Reset on R key
+		if (GetKey(olc::Key::R).bPressed) nes.reset();
+		if (GetKey(olc::Key::SPACE).bPressed) bEmulationRun = !bEmulationRun;
+		if (GetKey(olc::Key::P).bPressed) (++nSelectedPalette) &= 0x07;
+		if (GetKey(olc::Key::DOWN).bPressed) {
+			ram_line += 0x0040;
+		}
+		if (GetKey(olc::Key::UP).bPressed) {
+			ram_line -= 0x0040;
+			if (ram_line < 0) {
+				ram_line = 0x0000;
+			}
+		}
 
 		if (bEmulationRun) {
 			if (fResidualTime > 0.0f)
@@ -120,7 +136,6 @@ public:
 				do { nes.clock(); } while (!nes.ppu.frame_complete);
 				nes.ppu.frame_complete = false;
 			}
-			
 		}
 		else {
 			// Emulate code step-by-step
@@ -134,7 +149,7 @@ public:
 			}
 
 			if (GetKey(olc::Key::N).bPressed) {
-				for(int i = 0; i < 10; i++) {
+				for (int i = 0; i < 10; i++) {
 					do { nes.clock(); } while (!nes.cpu.complete());
 					do { nes.clock(); } while (nes.cpu.complete());
 				}
@@ -151,20 +166,6 @@ public:
 			}
 		}
 
-		// Reset on R key
-		if (GetKey(olc::Key::R).bPressed) nes.reset();
-		if (GetKey(olc::Key::SPACE).bPressed) bEmulationRun = !bEmulationRun;
-		if (GetKey(olc::Key::P).bPressed) (++nSelectedPalette) &= 0x07;
-
-		if (GetKey(olc::Key::DOWN).bPressed) {
-			ram_line += 0x0040;
-		}
-		if (GetKey(olc::Key::UP).bPressed) {
-			ram_line -= 0x0040;
-			if (ram_line < 0) {
-				ram_line = 0x0000;
-			}
-		}
 
 		drawCPU(516, 2);
 		drawCode(516, 72, 26);
@@ -187,13 +188,21 @@ public:
 		// Draw rendered output
 		DrawSprite(0, 0, &nes.ppu.GetScreen(), 2);
 
+		// Draw ID's in the corresponding nametable locations
+		//for (uint8_t y = 0; y < 30; y++) {
+		//	for (uint8_t x = 0; x < 32; x++) {
+		//		// There's a bug for tblName that's requiring me to public the variable
+		//		DrawString(x * 16, y * 16, hex((uint32_t)nes.ppu.tblName[0][y * 32 + x], 2));
+		//	}
+		//}
+
 		return true;
 	}
 };
 
 int main() {
 	Demo_nes6502 demo;
-	demo.Construct(800, 480, 2, 2);
+	demo.Construct(780, 480, 2, 2);
 	demo.Start();
 	return 0;
 }

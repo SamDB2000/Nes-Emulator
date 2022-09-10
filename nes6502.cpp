@@ -49,7 +49,7 @@ uint8_t nes6502::read(uint16_t addr)
 // Writes a byte to the bus at the specified address
 void nes6502::write(uint16_t addr, uint8_t data)
 {
-	return bus->cpuWrite(addr, data);
+	bus->cpuWrite(addr, data);
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -64,23 +64,23 @@ void nes6502::write(uint16_t addr, uint8_t data)
 // set the value at location 0xFFFC at compile time.
 void nes6502::reset()
 {
-	a = 0;
-	x = 0;
-	y = 0;
-	stkp = 0xFD;
-	status = 0x00 | U | I;
-	
-	
 	// For simple testing this can be changed
 	// This sets the program counter
 	addr_abs = 0xFFFC;
 	uint16_t lo = read(addr_abs + 0);
 	uint16_t hi = read(addr_abs + 1);
 	pc = (hi << 8) | lo;
+
+	a = 0;
+	x = 0;
+	y = 0;
+	stkp = 0xFD;
+	status = 0x00 | U; // | I;
 	
 	// COMMENT THIS WHEN NOT TESTING CPU USING NESTEST
 	// pc = 0xC000;
 
+	// Clear internal helper variables
 	addr_abs = 0x0000;
 	addr_rel = 0x0000;
 	fetched = 0x00;
@@ -127,7 +127,7 @@ void nes6502::irq()
 
 // Non maskable interrupt:
 // The only difference between the IRQ function is that it is unignorable
-// and the address to read from afterwards has changed.
+// and the program counter address is read from location 0xFFFA.
 void nes6502::nmi()
 {
 	// Push pc to stack (takes two pushes since it is a 16-bit variable)
@@ -230,7 +230,7 @@ uint8_t nes6502::IMP()
 uint8_t nes6502::IMM()
 {
 	// The data will be in the next byte of the program
-	addr_abs = pc++; 
+	addr_abs = pc++;
 	return 0;
 }
 
@@ -424,16 +424,16 @@ uint8_t nes6502::ADC()
 	fetch();
 	// res = a + m + c
 	// This is done as a 16bit operation to make flag setting simpler
-	uint16_t result = (uint16_t)a + (uint16_t)fetched + (uint16_t)GetFlag(C);
-	SetFlag(C, result > 255);
-	SetFlag(Z, (result & 0x00FF) == 0);
-	SetFlag(N, result & 0x80);
+	temp = (uint16_t)a + (uint16_t)fetched + (uint16_t)GetFlag(C);
+	SetFlag(C, temp > 255);
+	SetFlag(Z, (temp & 0x00FF) == 0);
+	SetFlag(N, temp & 0x80);
 
 	// Set the overflow bit based off of if a pos + pos = neg  or if  neg + neg = pos
 	// Logical way of saying that if the result has a different sign (first bit) then both a and m
-	SetFlag(V, (~((uint16_t)a ^ (uint16_t)fetched) & ((uint16_t)a ^ (uint16_t)result)) & 0x0080);
+	SetFlag(V, (~((uint16_t)a ^ (uint16_t)fetched) & ((uint16_t)a ^ (uint16_t)temp)) & 0x0080);
 
-	a = result & 0x00FF; // Load the 8-bit result into the accumulator
+	a = temp & 0x00FF; // Load the 8-bit result into the accumulator
 
 	return 1; // might return an extra clock cycle
 }
@@ -531,8 +531,8 @@ uint8_t nes6502::BIT()
 	fetch();
 	temp = a & fetched;
 	SetFlag(Z, temp == 0x00);
-	SetFlag(V, fetched & 0x40);
 	SetFlag(N, fetched & 0x80);
+	SetFlag(V, fetched & 0x40);
 	return 0;
 }
 
@@ -685,7 +685,7 @@ uint8_t nes6502::CMP() {
 	temp = (uint16_t)a - (uint16_t)fetched;
 	SetFlag(C, a >= fetched);
 	SetFlag(Z, a == fetched);
-	SetFlag(N, temp & 0x80);
+	SetFlag(N, temp & 0x0080);
 	return 1;
 }
 
@@ -718,9 +718,9 @@ uint8_t nes6502::DEC() {
 	fetch();
 	temp = fetched - 0x01;
 	// Make sure to overwrite the data in memory
-	write(addr_abs, temp);
-	SetFlag(Z, temp == 0x00);
-	SetFlag(N, temp & 0x80);
+	write(addr_abs, temp & 0x00FF);
+	SetFlag(Z, (temp & 0x00FF) == 0x0000);
+	SetFlag(N, temp & 0x0080);
 	return 0;
 }
 
@@ -758,16 +758,18 @@ uint8_t nes6502::EOR() {
 // Instruction: Incrememnt Memory
 uint8_t nes6502::INC() {
 	fetch();
-	fetched = fetched + 0x01;
-	write(addr_abs, fetched);
-	SetFlag(Z, fetched == 0x00);
-	SetFlag(N, fetched & 0x80);
+	// fetched = fetched + 0x01;
+	// write(addr_abs, fetched);
+	temp = fetched + 1;
+	write(addr_abs, temp & 0x00FF);
+	SetFlag(Z, (temp & 0x00FF) == 0x0000);
+	SetFlag(N, temp & 0x0080);
 	return 0;
 }
 
 // Instruction: Increment X Register
 uint8_t nes6502::INX() {
-	x = x + 0x01;
+	x++;
 	SetFlag(Z, x == 0x00);
 	SetFlag(N, x & 0x80);
 	return 0;
@@ -775,7 +777,7 @@ uint8_t nes6502::INX() {
 
 // Instruction: Increment Y Register
 uint8_t nes6502::INY() {
-	y = y + 0x01;
+	y++;
 	SetFlag(Z, y == 0x00);
 	SetFlag(N, y & 0x80);
 	return 0;
@@ -905,10 +907,13 @@ uint8_t nes6502::PHA()
 
 // Instruction: Push Processor Status
 // Pushes a copy of status flags onto the stack
+// Note: Break flag is set to 1 before push
 uint8_t nes6502::PHP() {
 	// TODO: This one looks correct based off the guide
 	// but source code is different, check olcNES if not working
-	write(0x0100 + stkp, status);
+	write(0x0100 + stkp, status | B | U);
+	SetFlag(B, 0);
+	SetFlag(U, 0);
 	stkp--;
 	return 0;
 }
@@ -938,11 +943,12 @@ uint8_t nes6502::PLP() {
 uint8_t nes6502::ROL() {
 	fetch();
 	// Left shift by 1
-	temp = fetched << 1;
+	// temp = fetched << 1;
+	temp = (uint16_t)(fetched << 1) | GetFlag(C);
 	// Add the carry flag to the end
 	// This assumes the 0 bit's value is 0 after a left shift
-	temp += GetFlag(C);
-	SetFlag(C, fetched & 0x80);
+	// temp += GetFlag(C);
+	SetFlag(C, temp & 0xFF00);
 	SetFlag(Z, (temp & 0x00FF) == 0x0000);
 	SetFlag(N, temp & 0x0080);
 
@@ -963,10 +969,11 @@ uint8_t nes6502::ROL() {
 // while the old bit 0 becomes the new carry flag value.
 uint8_t nes6502::ROR() {
 	fetch();
-	temp = fetched >> 1;
-	temp |= GetFlag(C) << 7;
+	//temp = fetched >> 1;
+	//temp |= GetFlag(C) << 7;
+	temp = (uint16_t)(GetFlag(C) << 7) | (fetched >> 1);
 	SetFlag(C, fetched & 0x01);
-	SetFlag(Z, (temp & 0x00FF) == 0x0000);
+	SetFlag(Z, (temp & 0x00FF) == 0x00);
 	SetFlag(N, temp & 0x0080);
 
 	// If IMP address mode, change to accumulator
@@ -990,7 +997,7 @@ uint8_t nes6502::RTI()
 	status &= ~U;
 
 	stkp++;
-	pc |= (uint16_t)read(0x0100 + stkp);
+	pc = (uint16_t)read(0x0100 + stkp);
 	stkp++;
 	pc |= (uint16_t)read(0x0100 + stkp) << 8;
 	return 0;
@@ -1026,12 +1033,12 @@ uint8_t nes6502::SBC()
 	uint16_t value = ((uint16_t)fetched) ^ 0x00FF;
 
 	// Perform the exact same addition procedure
-	uint16_t result = (uint16_t)a + value + (uint16_t)GetFlag(C);
-	SetFlag(C, result & 0xFF00);
-	SetFlag(Z, (result & 0x00FF) == 0);
-	SetFlag(N, result & 0x0080);
-	SetFlag(V, (result ^ (uint16_t)a) & (result ^ value) & 0x0080);
-	a = result & 0x00FF; // Load the 8-bit result into the accumulator
+	temp = (uint16_t)a + value + (uint16_t)GetFlag(C);
+	SetFlag(C, temp & 0xFF00);
+	SetFlag(Z, ((temp & 0x00FF) == 0));
+	SetFlag(N, temp & 0x0080);
+	SetFlag(V, (temp ^ (uint16_t)a) & (temp ^ value) & 0x0080);
+	a = temp & 0x00FF; // Load the 8-bit result into the accumulator
 	return 1; // might return an extra clock cycle
 }
 
@@ -1282,10 +1289,7 @@ std::map<uint16_t, std::string> nes6502::disassemble(uint16_t nStart, uint16_t n
 		// as the instructions are variable in length, so a simple
 		// incremental index is not sufficient.
 		mapLines[line_addr] = s_inst;
-
-		
 	}
 
 	return mapLines;
-
 }

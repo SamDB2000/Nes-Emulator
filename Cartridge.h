@@ -14,6 +14,13 @@ public:
 	Cartridge(const std::string& sFileName);
 	~Cartridge();
 
+	enum MIRROR {
+		HORIZONTAL,
+		VERTICAL,
+		ONESCREEN_LO,
+		ONESCREEN_HI,
+	} mirror = HORIZONTAL;
+
 private:
 	// Memory for the ROM Files
 	// They are vectors since we don't know how much memory will be used
@@ -34,5 +41,7 @@ public:
 
 	bool ppuRead(uint16_t addr, uint8_t &data);
 	bool ppuWrite(uint16_t addr, uint8_t data);
+
+	void reset();
 };
 

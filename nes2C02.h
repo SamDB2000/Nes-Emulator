@@ -13,7 +13,7 @@ public:
 	nes2C02();
 	~nes2C02();
 
-private: // Memories
+public: // Memories (maybe change back to private later)... 
 	// VRAM to hold name table information (2kb's or two whole name tables of 1kb size)
 	uint8_t tblName[2][1024];
 
@@ -50,7 +50,9 @@ private: // Locals for registers and rendering
 		struct {
 			// Base nametable address
 			// (0 = $2000; 1 = $2400; 2 = $2800; 3 = $2C00)
-			uint8_t nametable_select : 2;	// Nametable select
+			// Swtiched to using 1 bit x/y variables.
+			uint8_t nametable_x : 1;
+			uint8_t nametable_y : 1;
 			// VRAM address increment per CPU read/write of PPUDATA 
 			// (0: add 1, going across; 1: add 32 going down)
 			uint8_t increment_mode : 1;		// Incrememnt mode
@@ -169,9 +171,18 @@ private: // Locals for registers and rendering
 	// so we will buffer the data read.
 	uint8_t ppu_data_buffer = 0x00; 
 
-	uint16_t ppu_address = 0x0000;
+	// uint16_t ppu_address = 0x0000;
 
-	// Background rendering
+	uint8_t bg_next_tile_id = 0x00;
+	uint8_t bg_next_tile_attr = 0x00;
+	uint8_t bg_next_tile_lsb = 0x00;
+	uint8_t bg_next_tile_msb = 0x00;
+
+	// Shift Registers
+	uint16_t bg_shifter_pattern_lo = 0x0000;
+	uint16_t bg_shifter_pattern_hi = 0x0000;
+	uint16_t bg_shifter_attrib_lo = 0x0000;
+	uint16_t bg_shifter_attrib_hi = 0x0000;
 
 public:
 	// Communications from the PPU to the cpu bus
