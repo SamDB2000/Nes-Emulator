@@ -171,6 +171,8 @@ void nes2C02::cpuWrite(uint16_t addr, uint8_t data)
     case 0x0004: // OAM Data
         break;
     case 0x0005: // Scroll
+        // First write to scroll register contains X offset in pixel space
+        // which we split into coarse and fine x values
         if (address_latch == 0) {
             fine_x = data & 0x07;
             tram_addr.coarse_x = data >> 3;
@@ -237,22 +239,22 @@ uint8_t nes2C02::ppuRead(uint16_t addr, bool rdonly)
         if (cart->mirror == Cartridge::MIRROR::VERTICAL) {
             if (addr >= 0x0000 && addr <= 0x03FF)
                 data = tblName[0][addr & 0x03FF];
-            if (addr >= 0x0400 && addr <= 0x07FF)
+            else if (addr >= 0x0400 && addr <= 0x07FF)
                 data = tblName[1][addr & 0x03FF];
-            if (addr >= 0x0800 && addr <= 0x0BFF)
+            else if (addr >= 0x0800 && addr <= 0x0BFF)
                 data = tblName[0][addr & 0x03FF];
-            if (addr >= 0x0C00 && addr <= 0x0FFF)
+            else if (addr >= 0x0C00 && addr <= 0x0FFF)
                 data = tblName[1][addr & 0x03FF];
 
         }
         else if (cart->mirror == Cartridge::MIRROR::HORIZONTAL) {
             if (addr >= 0x0000 && addr <= 0x03FF)
                 data = tblName[0][addr & 0x03FF];
-            if (addr >= 0x0400 && addr <= 0x07FF)
+            else if (addr >= 0x0400 && addr <= 0x07FF)
                 data = tblName[1][addr & 0x03FF];
-            if (addr >= 0x0800 && addr <= 0x0BFF)
+            else if (addr >= 0x0800 && addr <= 0x0BFF)
                 data = tblName[0][addr & 0x03FF];
-            if (addr >= 0x0C00 && addr <= 0x0FFF)
+            else if (addr >= 0x0C00 && addr <= 0x0FFF)
                 data = tblName[1][addr & 0x03FF];
         }
     }
@@ -296,6 +298,7 @@ void nes2C02::ppuWrite(uint16_t addr, uint8_t data)
         tblPattern[(addr & 0x1000) >> 12][addr & 0x0FFF] = data;
     }
     else if (addr >= 0x2000 && addr <= 0x3EFF) {
+        addr &= 0x0FFF;
         // We're in nametable memory
         // NOTE: 0x3000-0x3EFF are mirrors of 0x2000-0x2EFF
         if (cart->mirror == Cartridge::MIRROR::VERTICAL) {
@@ -368,6 +371,10 @@ void nes2C02::reset() {
     bg_shifter_attrib_hi = 0x0000;
 }
 
+// As we go through scanlines and cycles, the PPU is effectively
+// a state machine going through the motions of fetching background
+// information and sprite information, compositing them into a single
+// pixel to be output.
 void nes2C02::clock() {
     // Lamda Helper functions:
     auto IncrementScrollX = [&]() {
@@ -377,10 +384,12 @@ void nes2C02::clock() {
 
         // Check if rendering is enabled
         if (mask.background || mask.sprites) {
+
             // A single name table is 32x30 tiles. As we increment horizontally
             // we may cross into a neighbouring nametable, or wrap around
             // to a neighboring nametable
             if (vram_addr.coarse_x == 31) {
+
                 // Leaving nametable so wrap address around
                 vram_addr.coarse_x = 0;
                 // Flip target nametable bit
@@ -482,8 +491,17 @@ void nes2C02::clock() {
             status.vblank = 0;
 
         }
+
         if ((cycle >= 2 && cycle < 258) || (cycle >= 321 && cycle < 338)) {
+            
             UpdateShifters();
+
+            // In these cycles we are collecting and working with visible data.
+            // The "shifters" have been preloaded by the end of the previous
+            // scanline with the data for the start of this scanline. Once
+            // we leave the visible region, we go dormant until the shifters
+            // are preloaded for the next scanline.
+
             // Extract Nametable Byte, Attribute byte, low bg tile byte, high bg tile byte
             // Then we'll want to incrememnt the loopy register in the y direction
             switch ((cycle - 1) % 8) {
@@ -493,7 +511,7 @@ void nes2C02::clock() {
                 // Extract next background tile ID
                 // "(vram_addr.reg & 0x0FFF)" : Mask for the relevant 12 bits
                 // "| 0x2000" : Offset into nametable space on PPU address bus
-                bg_next_tile_id = ppuRead((vram_addr.reg & 0x0FFF) | 0x2000);
+                bg_next_tile_id = ppuRead(0x2000 | (vram_addr.reg & 0x0FFF));
 
                 // Explanation:
                 // The bottom 12 bits of the loopy register provide an index into
@@ -653,6 +671,7 @@ void nes2C02::clock() {
         // Select which bit of the shift register depending on the fine_x value
         uint16_t bit_mux = 0x8000 >> fine_x;
 
+        // Select plane pixels by extracting from the shifter at the required location
         uint8_t p0_pixel = (bg_shifter_pattern_lo & bit_mux) > 0;
         uint8_t p1_pixel = (bg_shifter_pattern_hi & bit_mux) > 0;
         bg_pixel = (p1_pixel << 1) | p0_pixel; // Combine

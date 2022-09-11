@@ -95,7 +95,7 @@ private:
 
 	bool OnUserCreate() {
 		// Load the cartridge by creating the shared ptr object
-		cart = std::make_shared<Cartridge>("roms/nestest.nes");
+		cart = std::make_shared<Cartridge>("roms/SMB.nes");
 
 		//if (!cart->ImageValid())
 		//	return false;
@@ -191,7 +191,7 @@ private:
 		// Draw ID's in the corresponding nametable locations
 		//for (uint8_t y = 0; y < 30; y++) {
 		//	for (uint8_t x = 0; x < 32; x++) {
-		//		// There's a bug for tblName that's requiring me to public the variable
+		//		// there's a bug for tblname that's requiring me to public the variable
 		//		DrawString(x * 16, y * 16, hex((uint32_t)nes.ppu.tblName[0][y * 32 + x], 2));
 		//	}
 		//}
