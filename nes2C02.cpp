@@ -236,6 +236,24 @@ uint8_t nes2C02::ppuRead(uint16_t addr, bool rdonly)
 
         // We're in nametable memory
         // NOTE: 0x3000-0x3EFF are mirrors of 0x2000-0x2EFF
+        // From wiki on nametables:
+        /*(0, 0)     (256, 0)     (511, 0)
+            +-----------+-----------+
+            |           |           |
+            |           |           |
+            |   $2000   |   $2400   |
+            |           |           |
+            |           |           |
+    (0, 240)+-----------+-----------+(511, 240)
+            |           |           |
+            |           |           |
+            |   $2800   |   $2C00   |
+            |           |           |
+            |           |           |
+            +-----------+-----------+
+        (0, 479)   (256, 479)   (511, 479)
+        */
+        // For vertical mirroring, the $2000=$2800 and $2400=$2C00
         if (cart->mirror == Cartridge::MIRROR::VERTICAL) {
             if (addr >= 0x0000 && addr <= 0x03FF)
                 data = tblName[0][addr & 0x03FF];
@@ -245,18 +263,19 @@ uint8_t nes2C02::ppuRead(uint16_t addr, bool rdonly)
                 data = tblName[0][addr & 0x03FF];
             else if (addr >= 0x0C00 && addr <= 0x0FFF)
                 data = tblName[1][addr & 0x03FF];
-
         }
+        // For vertical mirroring, the $2000=$2400 and $2800=$2C00
         else if (cart->mirror == Cartridge::MIRROR::HORIZONTAL) {
             if (addr >= 0x0000 && addr <= 0x03FF)
                 data = tblName[0][addr & 0x03FF];
             else if (addr >= 0x0400 && addr <= 0x07FF)
-                data = tblName[1][addr & 0x03FF];
-            else if (addr >= 0x0800 && addr <= 0x0BFF)
                 data = tblName[0][addr & 0x03FF];
+            else if (addr >= 0x0800 && addr <= 0x0BFF)
+                data = tblName[1][addr & 0x03FF];
             else if (addr >= 0x0C00 && addr <= 0x0FFF)
                 data = tblName[1][addr & 0x03FF];
         }
+        // Small note: source code does not use "else if"
     }
     else if (addr >= 0x3F00 && addr <= 0x3FFF) {
         // We're in Palette RAM
@@ -299,8 +318,7 @@ void nes2C02::ppuWrite(uint16_t addr, uint8_t data)
     }
     else if (addr >= 0x2000 && addr <= 0x3EFF) {
         addr &= 0x0FFF;
-        // We're in nametable memory
-        // NOTE: 0x3000-0x3EFF are mirrors of 0x2000-0x2EFF
+
         if (cart->mirror == Cartridge::MIRROR::VERTICAL) {
             if (addr >= 0x0000 && addr <= 0x03FF)
                 tblName[0][addr & 0x03FF] = data;
@@ -418,23 +436,23 @@ void nes2C02::clock() {
                 // to identify which row of the nametable we want, and the fine
                 // y offset is the specific "scanline"
                 vram_addr.fine_y = 0;
-            }
-
-            // Check if we need to swap vertical nametable targets
-            if (vram_addr.coarse_y == 29) {
-                // Reset course y offset
-                vram_addr.coarse_y = 0;
-                // And flip the target nametable bit
-                vram_addr.nametable_y = ~vram_addr.nametable_y;
-            }
-            else if (vram_addr.coarse_y == 31) {
-                // In case the pointer is in the attribute memory,
-                // we juse wrap around the current nametable
-                vram_addr.coarse_y = 0;
-            }
-            else {
-                // None of the above boundary/wrapping conditions apply
-                vram_addr.coarse_y++;
+                
+                // Check if we need to swap vertical nametable targets
+                if (vram_addr.coarse_y == 29) {
+                    // Reset course y offset
+                    vram_addr.coarse_y = 0;
+                    // And flip the target nametable bit
+                    vram_addr.nametable_y = ~vram_addr.nametable_y;
+                }
+                else if (vram_addr.coarse_y == 31) {
+                    // In case the pointer is in the attribute memory,
+                    // we juse wrap around the current nametable
+                    vram_addr.coarse_y = 0;
+                }
+                else {
+                    // None of the above boundary/wrapping conditions apply
+                    vram_addr.coarse_y++;
+                }
             }
         }
     };
@@ -663,9 +681,11 @@ void nes2C02::clock() {
         }
     }
     
+    // NOTE FOR NEXT TIME: The code under here is likely how you're going to debug and figure
+    // out the current PPU issue.
 
     uint8_t bg_pixel = 0x00; // 2-bit pixel to be rendered
-    uint8_t bg_palette = 0x00; // 3-bit index of the palettre the pixel indexes
+    uint8_t bg_palette = 0x00; // 3-bit index of the palette the pixel indexes
 
     if (mask.background) {
         // Select which bit of the shift register depending on the fine_x value

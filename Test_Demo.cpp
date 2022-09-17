@@ -95,7 +95,7 @@ private:
 
 	bool OnUserCreate() {
 		// Load the cartridge by creating the shared ptr object
-		cart = std::make_shared<Cartridge>("roms/SMB.nes");
+		cart = std::make_shared<Cartridge>("roms/DK.nes");
 
 		//if (!cart->ImageValid())
 		//	return false;
