@@ -758,12 +758,10 @@ uint8_t nes6502::EOR() {
 // Instruction: Incrememnt Memory
 uint8_t nes6502::INC() {
 	fetch();
-	// fetched = fetched + 0x01;
-	// write(addr_abs, fetched);
-	temp = fetched + 1;
-	write(addr_abs, temp & 0x00FF);
-	SetFlag(Z, (temp & 0x00FF) == 0x0000);
-	SetFlag(N, temp & 0x0080);
+	fetched = fetched + 0x01;
+	write(addr_abs, fetched);
+	SetFlag(Z, fetched == 0x00);
+	SetFlag(N, fetched & 0x80);
 	return 0;
 }
 
@@ -943,11 +941,10 @@ uint8_t nes6502::PLP() {
 uint8_t nes6502::ROL() {
 	fetch();
 	// Left shift by 1
-	// temp = fetched << 1;
-	temp = (uint16_t)(fetched << 1) | GetFlag(C);
+	temp = fetched << 1;
 	// Add the carry flag to the end
 	// This assumes the 0 bit's value is 0 after a left shift
-	// temp += GetFlag(C);
+	temp += GetFlag(C);
 	SetFlag(C, temp & 0xFF00);
 	SetFlag(Z, (temp & 0x00FF) == 0x0000);
 	SetFlag(N, temp & 0x0080);
@@ -969,9 +966,8 @@ uint8_t nes6502::ROL() {
 // while the old bit 0 becomes the new carry flag value.
 uint8_t nes6502::ROR() {
 	fetch();
-	//temp = fetched >> 1;
-	//temp |= GetFlag(C) << 7;
-	temp = (uint16_t)(GetFlag(C) << 7) | (fetched >> 1);
+	temp = fetched >> 1;
+	temp |= GetFlag(C) << 7;
 	SetFlag(C, fetched & 0x01);
 	SetFlag(Z, (temp & 0x00FF) == 0x00);
 	SetFlag(N, temp & 0x0080);

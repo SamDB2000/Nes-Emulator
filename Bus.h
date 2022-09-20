@@ -26,6 +26,10 @@ public: // Devices on the NES
 	// The Cartridge
 	std::shared_ptr<Cartridge> cart;
 
+	// The controllers (the NES only supported 2)
+	// Stores the instantaneous state of both the controllers
+	uint8_t controller[2];
+
 public: // Bus Read and Write
 	void cpuWrite(uint16_t addr, uint8_t data);
 	uint8_t cpuRead(uint16_t addr, bool bReadOnly = false);
@@ -38,5 +42,9 @@ public: // System Interface
 private:
 	// A count of how many clock ticks have passed
 	uint32_t nSystemClockCounter = 0;
+
+	// Store the snapshot of the input when the corresponding
+	// memory address is written to
+	uint8_t controller_state[2];
 };
 

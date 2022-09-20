@@ -26,9 +26,14 @@ void Bus::cpuWrite(uint16_t addr, uint8_t data)
 		// Uses mirroring with 2kb
 		cpuRam[addr & 0x07FF] = data;
 	}
-	else if (addr >= 2000 && addr <= 0x3FFF) {
+	else if (addr >= 0x2000 && addr <= 0x3FFF) {
 		// Uses mirroring and writes directly to the PPU
 		ppu.cpuWrite(addr & 0x0007, data);
+	}
+	// Controller ports
+	else if (addr >= 0x4016 && addr <= 0x4017) {
+		// Take a snapshot of the corresponding controller
+		controller_state[addr & 0x0001] = controller[addr & 0x0001];
 	}
 }
 
@@ -50,6 +55,13 @@ uint8_t Bus::cpuRead(uint16_t addr, bool bReadOnly)
 	}
 	else if (addr >= 2000 && addr <= 0x3FFF) {
 		data = ppu.cpuRead(addr & 0x0007, bReadOnly);
+	}
+	// Controller ports
+	else if (addr >= 0x4016 && addr <= 0x4017) {
+		// We return only the most significant bit at these addresses
+		data = (controller_state[addr & 0x0001] & 0x80) > 0;
+		// Then shift it (since it is a shift-register)
+		controller_state[addr & 0x0001] <<= 1;
 	}
 	return data;
 }
