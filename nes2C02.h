@@ -203,6 +203,9 @@ private:
 	uint8_t sprite_shifter_pattern_lo[8]; // Low bit plane
 	uint8_t sprite_shifter_pattern_hi[8]; // High bit plane
 
+	bool spriteZeroHitPossible = false;
+	bool spriteZeroHitRendered = false;
+
 public:
 	// Pointer to the base of array of OAM structs
 	uint8_t* pOAM = (uint8_t*)OAM;

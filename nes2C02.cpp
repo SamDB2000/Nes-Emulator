@@ -528,6 +528,8 @@ void nes2C02::clock() {
 
             // Clear out utility variables for sprites
             status.sprite_overflow = 0;
+            status.sprite0_hit = 0;
+
             for (uint8_t i = 0; i < 8; i++) {
                 sprite_shifter_pattern_lo[i] = 0;
                 sprite_shifter_pattern_hi[i] = 0;
@@ -699,6 +701,9 @@ void nes2C02::clock() {
                 sprite_shifter_pattern_hi[i] = 0;
             }
 
+            // Clear this flag in case it got set last time
+            spriteZeroHitPossible = false;
+
             uint8_t nOAMEntry = 0;
             // loop through all 64 OAM entries or until 9 sprites are found
             while ((nOAMEntry < 64) && (sprite_count < 9)) {
@@ -708,10 +713,17 @@ void nes2C02::clock() {
                 if (diff >= 0 && diff < (control.sprite_height ? 16 : 8)) {
                     // Sprite is visible on the next scanline
                     // Add to scanline buffer if not already full
-                    if (sprite_count < 8) {
+                    if (sprite_count <= 8) {
+                        // Check for if a sprite zero hit is possible on next scanline
+                        if (nOAMEntry == 0) {
+                            spriteZeroHitPossible = true;
+                        }
+
                         memcpy(&spriteScanline[sprite_count], &OAM[nOAMEntry], sizeof(sObjectAttributeEntry));
                         sprite_count++;
                     }
+
+                    
                 }
                 nOAMEntry++;
             }
@@ -880,8 +892,12 @@ void nes2C02::clock() {
     uint8_t fg_pixel = 0x00;
     uint8_t fg_palette = 0x00;
     uint8_t fg_priority = 0x00;
+    uint8_t zero_hit = 0x00;
 
     if (mask.sprites) {
+        // Clear sprite zero rendered flag
+        spriteZeroHitRendered = false;
+
         // Find the first visible pixel of the highest priority
         for (uint8_t i = 0; i < sprite_count; i++) {
             // Sprites naturally are in order since we got them from the OAM
@@ -902,8 +918,15 @@ void nes2C02::clock() {
                 // If fg_pixel is not transparent, render it and don't bother
                 // checking the rest of the sprites on the scanline (priority)
                 if (fg_pixel != 0) {
+                    // If the bg and fg pixels are not transparent, there could
+                    // be a sprite zero hit. If we're on sprite 0
+                    if (spriteZeroHitPossible && i == 0) {
+                        spriteZeroHitRendered = true;
+                    }
+
                     break;
                 }
+
             }
         }
     }
@@ -928,6 +951,24 @@ void nes2C02::clock() {
         // are not rectangular i.e. partially transparent
     }
     else if (fg_pixel > 0 && bg_pixel > 0) {
+        // It's possible to for a sprite zero hit if both the
+        // background and foreground are visible
+        if (spriteZeroHitRendered) {
+            if (mask.background & mask.sprites) {
+                if (~(mask.left_bg | mask.left_sprites)) {
+                    if (cycle >= 9 && cycle < 258) {
+                        status.sprite0_hit = 1;
+                    }
+                }
+                else
+                {
+                    if (cycle >= 1 && cycle < 258) {
+                        status.sprite0_hit = 1;
+                    }
+                }
+            }
+        }
+
         // Both are visible... How do we choose?
         // Use the fg_priority flag that we obtained
         if (fg_priority) {
