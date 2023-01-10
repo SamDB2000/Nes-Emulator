@@ -56,8 +56,9 @@ private: // Locals for registers and rendering
 			// VRAM address increment per CPU read/write of PPUDATA 
 			// (0: add 1, going across; 1: add 32 going down)
 			uint8_t increment_mode : 1;		// Incrememnt mode
-			// Sprite pattern table address for 8x8 sprites (0: $0000, 1: $1000, ignored in 8x16 mode)
-			uint8_t sprite_tile : 1;		// Sprite tile select
+			// Sprite pattern table address for 8x8 sprites 
+			// (0: $0000, 1: $1000, ignored in 8x16 mode)
+			uint8_t sprite_pattern : 1;		// Sprite tile select
 			// Background pattern table address (0: $0000, 1: $1000)
 			uint8_t bg_tile : 1;			// BG tile select
 			// Sprite size (0: 8x8 pixels; 1: 8x16 pixels)
@@ -183,6 +184,30 @@ private: // Locals for registers and rendering
 	uint16_t bg_shifter_pattern_hi = 0x0000;
 	uint16_t bg_shifter_attrib_lo = 0x0000;
 	uint16_t bg_shifter_attrib_hi = 0x0000;
+
+// Foreground PPU
+private:
+	struct sObjectAttributeEntry {
+		uint8_t y;			// Y position of sprite
+		uint8_t id;			// ID of tile from pattern memory
+		uint8_t attribute;	// Flags define how sprite should be rendered
+		uint8_t x;			// X position of sprite
+	} OAM[64];
+
+	// Array of each sprite that is going to be rendered on the next scanline
+	sObjectAttributeEntry spriteScanline[8];
+	// Number of sprites found on next scanline
+	uint8_t sprite_count;
+
+	// We're using shifters for the sprites (8 each)
+	uint8_t sprite_shifter_pattern_lo[8]; // Low bit plane
+	uint8_t sprite_shifter_pattern_hi[8]; // High bit plane
+
+public:
+	// Pointer to the base of array of OAM structs
+	uint8_t* pOAM = (uint8_t*)OAM;
+
+	uint8_t oam_addr = 0x00;
 
 public:
 	// Communications from the PPU to the cpu bus

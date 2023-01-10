@@ -127,6 +127,7 @@ uint8_t nes2C02::cpuRead(uint16_t addr, bool rdonly)
         case 0x0003: // OAM Address
             break;
         case 0x0004: // OAM Data
+            data = pOAM[oam_addr];
             break;
         case 0x0005: // Scroll - Not Readable
             break;
@@ -167,8 +168,10 @@ void nes2C02::cpuWrite(uint16_t addr, uint8_t data)
     case 0x0002: // Status
         break;
     case 0x0003: // OAM Address
+        oam_addr = data;
         break;
     case 0x0004: // OAM Data
+        pOAM[oam_addr] = data;
         break;
     case 0x0005: // Scroll
         // First write to scroll register contains X offset in pixel space
@@ -430,8 +433,8 @@ void nes2C02::clock() {
             }
             else {
                 // If we have gone beyond beyond the height of a row, we need to
-                // increment the row, potentially wrapping into neighbouring 
-                // vertical nametables. Don't forget however, the bottom two rows
+                // increment the row, potentially wrapping into neighboring 
+                // vertical nametables. Although, the bottom two rows
                 // do not contain tile information. The coarse y offset is used
                 // to identify which row of the nametable we want, and the fine
                 // y offset is the specific "scanline"
@@ -492,6 +495,21 @@ void nes2C02::clock() {
             bg_shifter_attrib_lo <<= 1;
             bg_shifter_attrib_hi <<= 1;
         }
+
+        // Foreground shifters, only on visible cycles
+        if (mask.sprites && cycle >= 1 && cycle < 258) {
+            for (int i = 0; i < sprite_count; i++) {
+                // Decrement it's x position until we've hit the sprite
+                if (spriteScanline[i].x > 0) {
+                    spriteScanline[i].x--;
+                }
+                // Left-shift the shifters so that the bits can be rendered
+                else {
+                    sprite_shifter_pattern_lo[i] <<= 1;
+                    sprite_shifter_pattern_hi[i] <<= 1;
+                }
+            }
+        }
     };
 
     // https://www.nesdev.org/wiki/PPU_rendering
@@ -508,6 +526,12 @@ void nes2C02::clock() {
         if (scanline == -1 && cycle == 1) {
             status.vblank = 0;
 
+            // Clear out utility variables for sprites
+            status.sprite_overflow = 0;
+            for (uint8_t i = 0; i < 8; i++) {
+                sprite_shifter_pattern_lo[i] = 0;
+                sprite_shifter_pattern_hi[i] = 0;
+            }
         }
 
         if ((cycle >= 2 && cycle < 258) || (cycle >= 321 && cycle < 338)) {
@@ -651,17 +675,172 @@ void nes2C02::clock() {
             LoadBackgroundShifters();
             TransferAddressX();
         }
+
+        if (scanline == -1 && cycle >= 280 && cycle < 305) {
+            // End of vblank period so reset the Y address ready for rendering
+            TransferAddressY();
+        }
         
         // Superfluous reads of tile id at end of scanline
         if (cycle == 388 || cycle == 340) {
             bg_next_tile_id = ppuRead(0x2000 | (vram_addr.reg & 0x0FFF));
         }
 
-        if (scanline == -1 && cycle >= 280 && cycle < 305) {
-            // End of vblank period so reset the Y address ready for rendering
-            TransferAddressY();
-        }
+        // ======== Foreground Rendering ======================================
+        if (cycle == 257 && scanline >= 0) { // Note: this isn't actually cycle accurate
+            // Fill spriteScanline array with FF
+            // This is a better way than 0's since FF will never be visible on screen
+            std::memset(spriteScanline, 0xFF, 8 * sizeof(sObjectAttributeEntry));
+            sprite_count = 0;
 
+            // Clear out any residual information in the sprite pattern shifters
+            for (uint8_t i = 0; i < 8; i++) {
+                sprite_shifter_pattern_lo[i] = 0;
+                sprite_shifter_pattern_hi[i] = 0;
+            }
+
+            uint8_t nOAMEntry = 0;
+            // loop through all 64 OAM entries or until 9 sprites are found
+            while ((nOAMEntry < 64) && (sprite_count < 9)) {
+                // Test if a sprite is visible by subtractig the sprite's y
+                // coordindate from the current scanline
+                int16_t diff = ((int16_t)scanline - (int16_t)OAM[nOAMEntry].y);
+                if (diff >= 0 && diff < (control.sprite_height ? 16 : 8)) {
+                    // Sprite is visible on the next scanline
+                    // Add to scanline buffer if not already full
+                    if (sprite_count < 8) {
+                        memcpy(&spriteScanline[sprite_count], &OAM[nOAMEntry], sizeof(sObjectAttributeEntry));
+                        sprite_count++;
+                    }
+                }
+                nOAMEntry++;
+            }
+            status.sprite_overflow = (sprite_count > 8);
+        } // End of sprite evaluation phase
+
+        // Now we need to find relevant data from pattern memory
+        if (cycle == 340) {
+            // Populate shift registers with found sprites
+            for (uint8_t i = 0; i < sprite_count; i++) {
+                // Local variables to store sprite data and addresses
+                uint8_t sprite_pattern_bits_lo = 0x00;
+                uint8_t sprite_pattern_bits_hi = 0x00;
+                uint16_t sprite_pattern_addr_lo = 0x0000;
+                uint16_t sprite_pattern_addr_hi = 0x0000;
+
+                // This is how we find the address of the correct row of pixels 
+                // for the sprites we found from OAM
+                if (!control.sprite_height) {
+                    // 8x8 Sprite Mode
+                    if (!(spriteScanline[i].attribute & 0x80)) {
+                        // Sprite is NOT flipped vertically (it's normal)
+                        // So we can just read directly from the pattern table
+                        
+                        // We're going to work with just the lo address,
+                        // cause the hi addr is just 8 bits higher
+                        
+                        // Use the bit in ctrl register to shift b/w
+                        // pattern tables. Shift left 12 for the 4Kb
+                        // size of the pattern table (i.e. $0000 or $1000).
+                        // 
+                        // Then add the ID shifted by 4 (16 bytes) since
+                        // each tile is 16 bytes.
+                        // 
+                        // Then add the sprite's Y coordinate subtracted
+                        // from the current scanline for row offset.
+                        sprite_pattern_addr_lo =
+                            (control.sprite_pattern << 12)
+                            | (spriteScanline[i].id << 4)
+                            | (scanline - spriteScanline[i].y);
+                        // This gave us the address of a byte of a sprite
+                        // in pattern memory.
+                    }
+                    else {
+                        // Sprite is upside down
+                        // This is the same process as normal except
+                        // the row is subtracted from 7.
+                        sprite_pattern_addr_lo =
+                            (control.sprite_pattern << 12)
+                            | (spriteScanline[i].id << 4)
+                            | (7 - (scanline - spriteScanline[i].y));
+                    }
+                }
+                else {
+                    // 8x16 Sprite Mode
+                    // Note: in 8x16, the ctrl bit for pattern table is ignored
+                    if (!(spriteScanline[i].attribute & 0x80)) {
+                        // Sprite is NOT flipped vertically (it's normal)
+                        if (scanline - spriteScanline[i].y < 8) {
+                            // We're in the top half of the tile
+
+                            // ((spriteScanline[i].id & 0x01) << 12)
+                            // Gives which pattern table
+                            // | ((spriteScanline[i].id & 0xFE) << 4)
+                            // Which cell? Tile ID * 16 (16 bytes per tile)
+                            sprite_pattern_addr_lo =
+                                ((spriteScanline[i].id & 0x01) << 12)
+                                | ((spriteScanline[i].id & 0xFE) << 4)
+                                | ((scanline - spriteScanline[i].y) & 0x07);
+                        }
+                        else {
+                            // We're reading the bottom half of the tile
+                            // The added 1 shifts us down a row
+                            sprite_pattern_addr_lo =
+                                  ( (spriteScanline[i].id & 0x01)      << 12)
+                                | (((spriteScanline[i].id & 0xFE) + 1) << 4 )
+                                | ((scanline - spriteScanline[i].y) & 0x07  );
+                        }
+                    }
+                    else {
+                        // Sprite is upside down
+                        if (scanline - spriteScanline[i].y < 8) {
+                            sprite_pattern_addr_lo =
+                                ((spriteScanline[i].id & 0x01) << 12)
+                                | ((spriteScanline[i].id & 0xFE) << 4)
+                                | (7 - (scanline - spriteScanline[i].y) & 0x07);
+                        }
+                        else {
+                            sprite_pattern_addr_lo =
+                                ((spriteScanline[i].id & 0x01) << 12)
+                                | (((spriteScanline[i].id & 0xFE) + 1) << 4)
+                                | (7 - (scanline - spriteScanline[i].y) & 0x07);
+                        }
+                    }
+                }
+
+                // The high bit-plane is always just 8 bytes after the low bit plane
+                sprite_pattern_addr_hi = sprite_pattern_addr_lo + 8;
+
+                // Now we can read the bits from the addresses we've obtained
+                sprite_pattern_bits_lo = ppuRead(sprite_pattern_addr_lo);
+                sprite_pattern_bits_hi = ppuRead(sprite_pattern_addr_hi);
+
+                // Handle if the sprite is flipped horizontally (literally flip the byte)
+                // attribute byte tells us if it should be flipped  (i.e. mirrored left<->right)
+                if (spriteScanline[i].attribute & 0x40) { 
+                    // This little lambda function "flips" a byte
+                    // so 0b11100000 becomes 0b00000111. It's very
+                    // clever, and stolen completely from here:
+                    // https://stackoverflow.com/a/2602885
+                    auto flipbyte = [](uint8_t b)
+                    {
+                        b = (b & 0xF0) >> 4 | (b & 0x0F) << 4;
+                        b = (b & 0xCC) >> 2 | (b & 0x33) << 2;
+                        b = (b & 0xAA) >> 1 | (b & 0x55) << 1;
+                        return b;
+                    };
+
+                    // Flip patterns horizontally
+                    sprite_pattern_bits_lo = flipbyte(sprite_pattern_bits_lo);
+                    sprite_pattern_bits_hi = flipbyte(sprite_pattern_bits_hi);
+                }
+
+                // Now we can finally load the pattern into our sprite shift
+                // registers, ready for rendering on the next scanline
+                sprite_shifter_pattern_lo[i] = sprite_pattern_bits_lo;
+                sprite_shifter_pattern_hi[i] = sprite_pattern_bits_hi;
+            }
+        }
     }
 
     if (scanline == 240) {
@@ -680,9 +859,6 @@ void nes2C02::clock() {
                 nmi = true;
         }
     }
-    
-    // NOTE FOR NEXT TIME: The code under here is likely how you're going to debug and figure
-    // out the current PPU issue.
 
     uint8_t bg_pixel = 0x00; // 2-bit pixel to be rendered
     uint8_t bg_palette = 0x00; // 3-bit index of the palette the pixel indexes
@@ -701,8 +877,73 @@ void nes2C02::clock() {
         bg_palette = (bg_pal1 << 1) | bg_pal0;
     }
 
+    uint8_t fg_pixel = 0x00;
+    uint8_t fg_palette = 0x00;
+    uint8_t fg_priority = 0x00;
+
+    if (mask.sprites) {
+        // Find the first visible pixel of the highest priority
+        for (uint8_t i = 0; i < sprite_count; i++) {
+            // Sprites naturally are in order since we got them from the OAM
+            // Array that we iterated through in order
+            if (spriteScanline[i].x == 0) {
+                // The shifters should give us output to draw
+                // Extract the MSB from each shifter
+                uint8_t fg_pixel_lo = (sprite_shifter_pattern_lo[i] & 0x80) > 0;
+                uint8_t fg_pixel_hi = (sprite_shifter_pattern_hi[i] & 0x80) > 0;
+                // Put together
+                fg_pixel = (fg_pixel_hi << 1) | fg_pixel_lo;
+
+                fg_palette = (spriteScanline[i].attribute & 0x03) + 0x04;
+                // The priority is the sprite's priority with the background
+                // i.e. sprites can actually go behind/in front of the background
+                fg_priority = (spriteScanline[i].attribute & 0x20) == 0;
+
+                // If fg_pixel is not transparent, render it and don't bother
+                // checking the rest of the sprites on the scanline (priority)
+                if (fg_pixel != 0) {
+                    break;
+                }
+            }
+        }
+    }
+
+    uint8_t pixel = 0x00; // The final pixel
+    uint8_t palette = 0x00; // The final palette
+
+    if (fg_pixel == 0 && bg_pixel == 0) {
+        // Transparent bg and fg - drawn as default color
+        // No change to pixel/palette
+    }
+    else if (bg_pixel == 0 && fg_pixel > 0) {
+        // Draw the fg
+        pixel = fg_pixel;
+        palette = fg_palette;
+    }
+    else if (fg_pixel == 0 && bg_pixel > 0) {
+        // draw the background
+        pixel = bg_pixel;
+        palette = bg_palette;
+        // Note: this is what allows us to have sprites that
+        // are not rectangular i.e. partially transparent
+    }
+    else if (fg_pixel > 0 && bg_pixel > 0) {
+        // Both are visible... How do we choose?
+        // Use the fg_priority flag that we obtained
+        if (fg_priority) {
+            // Draw foreground
+            pixel = fg_pixel;
+            palette = fg_palette;
+        }
+        else {
+            pixel = bg_pixel;
+            palette = bg_palette;
+        }
+    }
+
+
     // Display output based on palette and pixel
-    sprScreen.SetPixel(cycle - 1, scanline, GetColorFromPaletteRam(bg_palette, bg_pixel));
+    sprScreen.SetPixel(cycle - 1, scanline, GetColorFromPaletteRam(palette, pixel));
 
     // Advance renderer - it never stops, it's relentless
     cycle++;
@@ -766,7 +1007,7 @@ olc::Sprite& nes2C02::GetPatternTable(uint8_t i, uint8_t palette) {
                 for (uint16_t col = 0; col < 8; col++) {
 
                     // Adding the least significant bit of each byte for the pixel color
-                    uint8_t pixel = (tile_lsb & 0x01) + (tile_msb & 0x01);
+                    uint8_t pixel = ((tile_lsb & 0x01) << 1) | (tile_msb & 0x01);
 
                     // Bit-shift by 1 so next iteration the least significant bits are correct
                     tile_lsb >>= 1; tile_msb >>= 1;

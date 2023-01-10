@@ -46,5 +46,24 @@ private:
 	// Store the snapshot of the input when the corresponding
 	// memory address is written to
 	uint8_t controller_state[2];
+
+	// Direct Memory Access is used to swiftly transfer data from the CPU
+	// bus into the OAM memory. The program prepares a page of memory with
+	// the sprite info required for the next frame and then initiates a
+	// DMA transfer. This suspends the CPU momentarily while the PPU gets
+	// sent data at PPU clock speeds. Note here, that dma_page and dma_addr
+	// form a 16-bit address in the CPU bus address space
+	uint8_t dma_page = 0x00;
+	uint8_t dma_addr = 0x00; // represents the low byte of a page
+	uint8_t dma_data = 0x00; // represents the byte of data in transit
+
+	// A flag to indicate that a DMA transfer is happening
+	bool dma_transfer = false;
+
+	// DMS transfers need to be timed accurately. In principle it takes
+	// 512 cycles to read and write the 256 bytes of the OAM memory, a
+	// read followed by a write. However, the CPU needs to be on an "even"
+	// clock cycle, so a dymmy cycle of idleness may be required
+	bool dma_dummy = true;
 };
 

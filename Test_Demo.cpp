@@ -95,10 +95,10 @@ private:
 
 	bool OnUserCreate() {
 		// Load the cartridge by creating the shared ptr object
-		cart = std::make_shared<Cartridge>("roms/nestest.nes");
+		cart = std::make_shared<Cartridge>("roms/SMB.nes");
 
-		//if (!cart->ImageValid())
-		//	return false;
+		/*if (!cart->ImageValid())
+			return false;*/
 
 		// Insert cartridge
 		nes.insertCartridge(cart);
@@ -118,10 +118,12 @@ private:
 		// Right now this is for testing, so I'm only including 1 controller
 		nes.controller[0] = 0x00;
 		// Most signfificant to least significant bit
-		nes.controller[0] |= GetKey(olc::Key::X).bHeld ? 0x80 : 0x00;
-		nes.controller[0] |= GetKey(olc::Key::Z).bHeld ? 0x40 : 0x00;
-		nes.controller[0] |= GetKey(olc::Key::A).bHeld ? 0x20 : 0x00;
-		nes.controller[0] |= GetKey(olc::Key::S).bHeld ? 0x10 : 0x00;
+
+		// 
+		nes.controller[0] |= GetKey(olc::Key::X).bHeld ? 0x80 : 0x00; // A
+		nes.controller[0] |= GetKey(olc::Key::Z).bHeld ? 0x40 : 0x00; // B 
+		nes.controller[0] |= GetKey(olc::Key::A).bHeld ? 0x20 : 0x00; // Select
+		nes.controller[0] |= GetKey(olc::Key::S).bHeld ? 0x10 : 0x00; // Start
 		nes.controller[0] |= GetKey(olc::Key::UP).bHeld ? 0x08 : 0x00;
 		nes.controller[0] |= GetKey(olc::Key::DOWN).bHeld ? 0x04 : 0x00;
 		nes.controller[0] |= GetKey(olc::Key::LEFT).bHeld ? 0x02 : 0x00;
@@ -131,15 +133,15 @@ private:
 		if (GetKey(olc::Key::R).bPressed) nes.reset();
 		if (GetKey(olc::Key::SPACE).bPressed) bEmulationRun = !bEmulationRun;
 		if (GetKey(olc::Key::P).bPressed) (++nSelectedPalette) &= 0x07;
-		if (GetKey(olc::Key::DOWN).bPressed) {
+		/*if (GetKey(olc::Key::DOWN).bPressed) {
 			ram_line += 0x0040;
-		}
-		if (GetKey(olc::Key::UP).bPressed) {
+		}*/
+		/*if (GetKey(olc::Key::UP).bPressed) {
 			ram_line -= 0x0040;
 			if (ram_line < 0) {
 				ram_line = 0x0000;
 			}
-		}
+		}*/
 
 		if (bEmulationRun) {
 			if (fResidualTime > 0.0f)
@@ -181,8 +183,18 @@ private:
 
 
 		drawCPU(516, 2);
-		drawCode(516, 72, 26);
+		// drawCode(516, 72, 26);
 		// drawRam(2, 2, ram_line, 32, 16);
+
+		// Get a text representation of the first 24 OAM entries (each is 4 bytes)
+		for (int i = 0; i < 24; i++) {
+			// In the format, x, y, ID: attr:
+			std::string s = hex(i, 2) + ": (" + std::to_string(nes.ppu.pOAM[i * 4 + 3])
+				+ ", " + std::to_string(nes.ppu.pOAM[i * 4 + 0]) + ") "
+				+ "ID: " + hex(nes.ppu.pOAM[i * 4 + 1], 2) +
+				+" AT: " + hex(nes.ppu.pOAM[i * 4 + 2], 2);
+			DrawString(516, 72 + i * 10, s);
+		}
 
 		// Draw palettes and pattern tables
 		const int nSwatchSize = 6; // ??
@@ -191,7 +203,7 @@ private:
 				FillRect(516 + p * (nSwatchSize * 5) + s * nSwatchSize, 340,
 					nSwatchSize, nSwatchSize, nes.ppu.GetColorFromPaletteRam(p, s));
 
-		// Draw slection reticule around selected palette
+		// Draw selection reticule around selected palette
 		DrawRect(516 + nSelectedPalette * (nSwatchSize * 5) - 1, 339, (nSwatchSize * 4), nSwatchSize, olc::WHITE);
 
 		// Draw left and then right pattern table
